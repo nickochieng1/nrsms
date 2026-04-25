@@ -65,7 +65,7 @@ export default function DashboardPage() {
   })) ?? []
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-8 flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
@@ -196,6 +196,7 @@ export default function DashboardPage() {
         {!recentSubmissions?.length ? (
           <p className="p-6 text-sm text-gray-400">No submissions yet.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -226,6 +227,7 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

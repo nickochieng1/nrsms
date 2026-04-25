@@ -27,7 +27,7 @@ export default function AuditLogPage() {
   })
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Audit Log</h1>
         <p className="text-gray-500 mt-1">Complete record of all system activity</p>
@@ -59,6 +59,7 @@ export default function AuditLogPage() {
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading audit log…</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -102,6 +103,7 @@ export default function AuditLogPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

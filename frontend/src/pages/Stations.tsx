@@ -87,7 +87,7 @@ export default function StationsPage() {
   })
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Stations</h1>
@@ -103,7 +103,7 @@ export default function StationsPage() {
               placeholder="Search by name or code…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="input pl-9 w-64"
+              className="input pl-9 w-full sm:w-64"
             />
             {search && (
               <button
@@ -127,7 +127,7 @@ export default function StationsPage() {
       {showForm && (
         <div className="card mb-6">
           <h2 className="font-semibold text-gray-900 mb-4">New Station</h2>
-          <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Station Name</label>
               <input className="input" {...register('name')} />

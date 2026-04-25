@@ -55,8 +55,8 @@ export default function SubmissionsPage() {
   const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Submissions</h1>
           <p className="text-gray-500 mt-1">Monthly ID statistics submissions</p>
@@ -87,6 +87,7 @@ export default function SubmissionsPage() {
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading submissions…</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -304,6 +305,7 @@ export default function SubmissionsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -81,7 +81,7 @@ export default function UsersPage() {
   const needsStation = role === 'station_officer' || role === 'registrar'
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
@@ -93,7 +93,7 @@ export default function UsersPage() {
       {showForm && (
         <div className="card mb-6">
           <h2 className="font-semibold text-gray-900 mb-4">New User</h2>
-          <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Full Name</label>
               <input className="input" {...register('full_name')} />
@@ -148,6 +148,7 @@ export default function UsersPage() {
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading…</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -207,6 +208,7 @@ export default function UsersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
