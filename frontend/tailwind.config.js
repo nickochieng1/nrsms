@@ -5,16 +5,16 @@ export default {
     extend: {
       colors: {
         primary: {
-          50:  '#f4f8f7',
-          100: '#e3edeb',   // #E3EDEB secondary accent
-          200: '#c0d6d2',
-          300: '#8db8b3',
-          400: '#5b9590',
-          500: '#347470',
-          600: '#1a1a1a',   // button bg  — dark but not pure black so hover is visible
-          700: '#111111',   // button hover / sidebar active item
-          800: '#080808',   // sidebar hover
-          900: '#000000',   // sidebar bg / login bg — pure black
+          50:  '#eff6ff',
+          100: '#e3edeb',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a5f',
         },
       },
     },

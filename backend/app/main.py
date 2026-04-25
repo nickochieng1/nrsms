@@ -31,6 +31,7 @@ app.include_router(api_router)
 def on_startup():
     Base.metadata.create_all(bind=engine)
     _seed_superuser()
+    _seed_stations()
 
 
 def _seed_superuser():
@@ -52,6 +53,54 @@ def _seed_superuser():
         elif not existing.username:
             existing.username = "admin"
             db.commit()
+
+
+def _seed_stations():
+    import os
+    from sqlalchemy.orm import Session
+    from app.models.station import Station
+
+    xlsx_path = os.path.join(os.path.dirname(__file__), "..", "stats.xlsx")
+    if not os.path.exists(xlsx_path):
+        return
+
+    import openpyxl
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True)
+    ws = wb.active
+    region = county = ""
+    skip_fragments = (
+        "TOTAL", "GRAND", "LIST OF", "JANUARY", "FEBRUARY", "MARCH",
+        "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPT", "OCTOBER",
+        "NOVEMBER", "DECEMBER", "NPR", "REPLACEMENTS",
+    )
+    stations_data = []
+    for row in ws.iter_rows(values_only=True):
+        val = row[0]
+        if not isinstance(val, str):
+            continue
+        val = val.strip().upper()
+        if not val:
+            continue
+        if "REGION" in val and "COUNTY" not in val:
+            region = val.replace(" TOTALS", "").replace(" TOTAL", "").strip()
+        elif "COUNTY" in val:
+            county = val.replace(" COUNTY", "").strip()
+        elif any(frag in val for frag in skip_fragments):
+            continue
+        else:
+            stations_data.append((region.title(), county.title(), val.title()))
+
+    with Session(engine) as db:
+        if db.query(Station).count() > 0:
+            return
+        seq = 1
+        for region_name, county_name, name in stations_data:
+            r = "".join(w[0] for w in region_name.split() if w)[:2].upper()
+            c = "".join(w[0] for w in county_name.split() if w)[:2].upper()
+            code = f"{r}{c}{seq:03d}"
+            seq += 1
+            db.add(Station(name=name, region=region_name, county=county_name, code=code))
+        db.commit()
 
 
 @app.get("/health")
