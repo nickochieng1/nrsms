@@ -5,7 +5,7 @@
 
 [[redirects]]
   from   = "/api/*"
-  to     = "https://nrsms-backend.onrender.com/api/:splat"
+  to     = "https://nrsms-46e3.onrender.com/api/:splat"
   status = 200
   force  = true
 
