@@ -40,13 +40,18 @@ def _seed_superuser():
     from app.schemas.user import UserCreate
 
     with Session(engine) as db:
-        if not crud_user.get_by_email(db, settings.FIRST_SUPERUSER_EMAIL):
+        existing = crud_user.get_by_email(db, settings.FIRST_SUPERUSER_EMAIL)
+        if not existing:
             crud_user.create(db, UserCreate(
                 full_name="System Administrator",
+                username="admin",
                 email=settings.FIRST_SUPERUSER_EMAIL,
                 password=settings.FIRST_SUPERUSER_PASSWORD,
                 role=UserRole.ADMIN,
             ))
+        elif not existing.username:
+            existing.username = "admin"
+            db.commit()
 
 
 @app.get("/health")
