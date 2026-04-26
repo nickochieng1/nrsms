@@ -61,6 +61,7 @@ def _zero_month() -> dict:
 def summary_report(
     year: int = Query(...),
     station_id: Optional[int] = Query(None),
+    region: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -74,6 +75,9 @@ def summary_report(
     )
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
+    elif region:
+        station_ids = [s.id for s in db.query(Station).filter(Station.region == region).all()]
+        q = q.filter(Submission.station_id.in_(station_ids))
 
     rows = q.all()
     monthly = {m: _zero_month() for m in range(1, 13)}

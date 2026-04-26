@@ -21,6 +21,8 @@ const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 export default function ReportsPage() {
   const { isDirector } = useAuth()
   const [year, setYear] = useState(new Date().getFullYear())
+  const [region, setRegion] = useState<string>('')
+  const [county, setCounty] = useState<string>('')
   const [stationId, setStationId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<DetailTab>('app')
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf' | 'word' | 'csv' | null>(null)
@@ -28,10 +30,37 @@ export default function ReportsPage() {
   const YEARS = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
 
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
+
+  // Derived filter options
+  const regions = [...new Set((stations ?? []).map((s) => s.region))].sort()
+  const counties = [...new Set((stations ?? []).filter((s) => s.region === region).map((s) => s.county))].sort()
+  const stationList = (stations ?? []).filter((s) => s.region === region && s.county === county).sort((a, b) => a.name.localeCompare(b.name))
+
+  // Only pass region to API when no specific station is selected
+  const activeRegion = stationId ? undefined : (region || undefined)
+
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, stationId],
-    queryFn: () => getSummaryReport(year, stationId),
+    queryKey: ['report', 'summary', year, stationId, activeRegion],
+    queryFn: () => getSummaryReport(year, stationId, activeRegion),
   })
+
+  function handleRegionChange(r: string) {
+    setRegion(r)
+    setCounty('')
+    setStationId(undefined)
+  }
+
+  function handleCountyChange(c: string) {
+    setCounty(c)
+    setStationId(undefined)
+  }
+
+  // Label showing current scope
+  const scopeLabel = stationId
+    ? (stations?.find((s) => s.id === stationId)?.name ?? `Station #${stationId}`)
+    : region
+      ? (county ? `${county} County, ${region} Region` : `${region} Region`)
+      : 'All Regions'
 
   const monthlyBarData = report?.monthly.map((m) => ({
     name: m.month_name as string,
@@ -86,7 +115,7 @@ export default function ReportsPage() {
     } else {
       // Excel and CSV: download immediately (full year or with month filter)
       const urlFn = fmt === 'csv' ? getCsvReportUrl : getExcelReportUrl
-      const url   = urlFn(year, undefined, stationId)
+      const url   = urlFn(year, undefined, stationId, activeRegion)
       const ext   = fmt === 'csv' ? 'csv' : 'xlsx'
       downloadFile(url, `nrb_report_${year}.${ext}`)
     }
@@ -131,8 +160,7 @@ export default function ReportsPage() {
                 </div>
               )}
               <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
-                Report covers approved submissions
-                {stationId ? ' for the selected station' : ' across all stations'}
+                Report covers approved submissions for <strong>{scopeLabel}</strong>
                 {needsMonth && pickedMonth
                   ? ` for ${MONTH_NAMES[Number(pickedMonth) - 1]} ${year}`
                   : ` — full year ${year}`}.
@@ -146,8 +174,8 @@ export default function ReportsPage() {
                   const m   = pickedMonth ? Number(pickedMonth) : undefined
                   const ext = exportFormat === 'pdf' ? 'pdf' : 'docx'
                   const url = exportFormat === 'pdf'
-                    ? getPdfReportUrl(year, m, stationId)
-                    : getWordReportUrl(year, m, stationId)
+                    ? getPdfReportUrl(year, m, stationId, activeRegion)
+                    : getWordReportUrl(year, m, stationId, activeRegion)
                   const suffix = m ? `_${String(m).padStart(2, '0')}` : ''
                   downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
                   setExportFormat(null)
@@ -163,7 +191,7 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-          <p className="text-gray-500 mt-1">NRB ID Statistics — {year}</p>
+          <p className="text-gray-500 mt-1">NRB ID Statistics — {year} · <span className="font-medium text-primary-700">{scopeLabel}</span></p>
         </div>
         {/* Export dropdown */}
         <div className="flex items-center gap-2">
@@ -187,31 +215,58 @@ export default function ReportsPage() {
 
       {/* Filters */}
       <div className="card mb-6">
-        <div className="flex gap-6 flex-wrap items-start">
+        <div className="flex gap-4 flex-wrap items-end">
+          {/* Year */}
           <div>
             <label className="label">Year</label>
             <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <div className="flex-1 min-w-64">
-            <p className="label mb-0">Station (optional)</p>
-            <p className="text-xs text-gray-400 mb-2">Leave unset to report across all stations</p>
-            <StationPicker
-              stations={stations ?? []}
-              value={stationId}
-              onChange={(id) => setStationId(id)}
-            />
-            {stationId && (
+
+          {/* Region */}
+          <div>
+            <label className="label">Region</label>
+            <select className="input w-52" value={region} onChange={(e) => handleRegionChange(e.target.value)}>
+              <option value="">All Regions</option>
+              {regions.map((r) => <option key={r} value={r}>{r} Region</option>)}
+            </select>
+          </div>
+
+          {/* County — shown when region selected */}
+          {region && (
+            <div>
+              <label className="label">County</label>
+              <select className="input w-48" value={county} onChange={(e) => handleCountyChange(e.target.value)}>
+                <option value="">All Counties</option>
+                {counties.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Station — shown when county selected */}
+          {county && (
+            <div>
+              <label className="label">Station</label>
+              <select className="input w-52" value={stationId ?? ''} onChange={(e) => setStationId(e.target.value ? Number(e.target.value) : undefined)}>
+                <option value="">All Stations in {county}</option>
+                {stationList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Clear button */}
+          {(region || stationId) && (
+            <div className="pb-0.5">
               <button
                 type="button"
-                className="mt-2 text-xs text-red-500 hover:underline"
-                onClick={() => setStationId(undefined)}
+                className="text-xs text-red-500 hover:underline mt-5"
+                onClick={() => { setRegion(''); setCounty(''); setStationId(undefined) }}
               >
-                Clear station filter
+                Clear filters
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
