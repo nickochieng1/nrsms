@@ -228,7 +228,7 @@ export default function ReportsPage() {
             <label className="label">Region</label>
             <select className="input w-52" value={region} onChange={(e) => handleRegionChange(e.target.value)}>
               <option value="">All Regions</option>
-              {regions.map((r) => <option key={r} value={r}>{r} Region</option>)}
+              {regions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
 
