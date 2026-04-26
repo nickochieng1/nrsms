@@ -16,6 +16,7 @@ type FormValues = z.infer<typeof schema>
 export default function LoginPage() {
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
+  const [slowWarning, setSlowWarning] = useState(false)
 
   const {
     register,
@@ -25,6 +26,8 @@ export default function LoginPage() {
 
   async function onSubmit(values: FormValues) {
     setError(null)
+    setSlowWarning(false)
+    const timer = setTimeout(() => setSlowWarning(true), 5000)
     try {
       const token = await login(values.username, values.password)
       localStorage.setItem('token', token)
@@ -32,7 +35,10 @@ export default function LoginPage() {
       authStore.setAuth(token, user)
       navigate('/dashboard', { replace: true })
     } catch {
-      setError('Invalid username or password')
+      setError('Invalid username or password. If this is your first login today, the server may still be waking up — please try again.')
+    } finally {
+      clearTimeout(timer)
+      setSlowWarning(false)
     }
   }
 
@@ -95,10 +101,21 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn-primary w-full mt-2 py-2.5"
+              className="btn-primary w-full mt-2 py-2.5 flex items-center justify-center gap-2"
             >
+              {isSubmitting && (
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
               {isSubmitting ? 'Signing in…' : 'Sign in'}
             </button>
+            {isSubmitting && slowWarning && (
+              <p className="text-center text-xs text-amber-600 mt-2">
+                Server is waking up, please wait a moment…
+              </p>
+            )}
           </form>
         </div>
 
