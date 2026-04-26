@@ -20,7 +20,7 @@ export interface Station {
   code: string
 }
 
-export type SubmissionStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'
+export type SubmissionStatus = 'draft' | 'submitted' | 'under_review' | 'registrar_approved' | 'approved' | 'rejected'
 
 export type NrbCat = 'npr' | 'replacements' | 'changes' | 'duplicates' | 'type4' | 'type5'
 export type ModulePrefix = 'app' | 'ids' | 'rej'
@@ -66,6 +66,7 @@ export interface Submission {
   id: number
   station_id: number
   submitted_by: number
+  submitted_by_name: string | null
   reviewed_by: number | null
   period_month: number
   period_year: number

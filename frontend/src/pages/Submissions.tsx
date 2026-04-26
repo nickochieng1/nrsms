@@ -45,7 +45,10 @@ export default function SubmissionsPage() {
   const canReview = isRegistrar || isDirector
 
   function handleRowClick(sub: Submission) {
-    if (canReview && sub.status === 'submitted') {
+    const canReviewNow =
+      (isRegistrar && sub.status === 'submitted') ||
+      (isDirector && sub.status === 'registrar_approved')
+    if (canReviewNow) {
       setReviewModal(sub)
     } else {
       setExpanded(expanded === sub.id ? null : sub.id)
@@ -92,6 +95,7 @@ export default function SubmissionsPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Period</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Submitted By</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-600">Applications</th>
                 <th className="text-right px-4 py-3 font-medium text-green-600">IDs Received</th>
                 <th className="text-right px-4 py-3 font-medium text-red-600">Rejections</th>
@@ -104,7 +108,7 @@ export default function SubmissionsPage() {
             <tbody className="divide-y divide-gray-100">
               {submissions?.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-gray-400">No submissions found.</td>
+                  <td colSpan={9} className="text-center py-10 text-gray-400">No submissions found.</td>
                 </tr>
               )}
               {submissions?.map((sub) => (
@@ -117,9 +121,15 @@ export default function SubmissionsPage() {
                     <td className="px-4 py-3 font-medium">
                       {MONTH_SHORT[sub.period_month - 1]} {sub.period_year}
                       <span className="ml-2 text-xs text-gray-400">#{sub.id}</span>
-                      {canReview && sub.status === 'submitted' && (
+                      {isRegistrar && sub.status === 'submitted' && (
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
                       )}
+                      {isDirector && sub.status === 'registrar_approved' && (
+                        <span className="ml-2 text-xs text-purple-600 font-semibold">· click to review</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">
+                      {sub.submitted_by_name ?? `User #${sub.submitted_by}`}
                     </td>
                     <td className="px-4 py-3 text-right text-blue-700">{sub.app_grand_total.toLocaleString()}</td>
                     <td className="px-4 py-3 text-right text-green-700">{sub.ids_grand_total.toLocaleString()}</td>

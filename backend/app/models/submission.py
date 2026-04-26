@@ -16,6 +16,7 @@ class SubmissionStatus(str, enum.Enum):
     DRAFT = "draft"
     SUBMITTED = "submitted"
     UNDER_REVIEW = "under_review"
+    REGISTRAR_APPROVED = "registrar_approved"
     APPROVED = "approved"
     REJECTED = "rejected"
 
@@ -211,3 +212,7 @@ class Submission(Base):
         "User", back_populates="submissions", foreign_keys=[submitted_by]
     )
     reviewed_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewed_by])
+
+    @property
+    def submitted_by_name(self) -> Optional[str]:
+        return self.submitted_by_user.full_name if self.submitted_by_user else None

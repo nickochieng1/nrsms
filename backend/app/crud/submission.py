@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.submission import Submission, SubmissionStatus
 from typing import Union
@@ -11,24 +11,34 @@ from app.services.computation import NRB_CATS, compute_submission_totals
 
 PREFIXES = ("app", "ids", "rej")
 
+_LOAD = joinedload(Submission.submitted_by_user)
+
 
 def get(db: Session, submission_id: int) -> Optional[Submission]:
-    return db.get(Submission, submission_id)
+    return (
+        db.query(Submission)
+        .options(_LOAD)
+        .filter(Submission.id == submission_id)
+        .first()
+    )
 
 
 def get_all(
     db: Session,
     station_id: Optional[int] = None,
     status: Optional[SubmissionStatus] = None,
+    statuses: Optional[Sequence[SubmissionStatus]] = None,
     year: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> List[Submission]:
-    q = db.query(Submission)
+    q = db.query(Submission).options(_LOAD)
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
     if status:
         q = q.filter(Submission.status == status)
+    elif statuses is not None:
+        q = q.filter(Submission.status.in_(statuses))
     if year:
         q = q.filter(Submission.period_year == year)
     return (
@@ -72,6 +82,14 @@ def update(db: Session, submission: Submission, data: SubmissionUpdate) -> Submi
 def submit(db: Session, submission: Submission) -> Submission:
     submission.status = SubmissionStatus.SUBMITTED
     submission.submitted_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+def registrar_approve(db: Session, submission: Submission, reviewer_id: int) -> Submission:
+    submission.status = SubmissionStatus.REGISTRAR_APPROVED
+    submission.reviewed_by = reviewer_id
     db.commit()
     db.refresh(submission)
     return submission

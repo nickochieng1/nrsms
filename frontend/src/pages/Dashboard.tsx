@@ -55,7 +55,9 @@ export default function DashboardPage() {
     enabled: isDirector || isRegistrar,
   })
 
-  const pendingCount = recentSubmissions?.filter((s) => s.status === 'submitted').length ?? 0
+  const pendingCount = recentSubmissions?.filter((s) =>
+    isDirector ? s.status === 'registrar_approved' : s.status === 'submitted'
+  ).length ?? 0
 
   const monthlyBarData = report?.monthly.map((m) => ({
     name: m.month_name as string,
@@ -89,16 +91,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {isRegistrar && pendingCount > 0 && (
+      {(isRegistrar || isDirector) && pendingCount > 0 && (
         <Link
-          to="/submissions?status=submitted"
-          className="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-xl flex items-center gap-3 hover:bg-yellow-100 transition-colors group"
+          to={`/submissions?status=${isDirector ? 'registrar_approved' : 'submitted'}`}
+          className={`mb-6 p-4 rounded-xl flex items-center gap-3 hover:opacity-90 transition-opacity group border ${
+            isDirector
+              ? 'bg-purple-50 border-purple-300'
+              : 'bg-yellow-50 border-yellow-300'
+          }`}
         >
-          <div className="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0" />
-          <p className="text-sm font-medium text-yellow-800">
+          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isDirector ? 'bg-purple-400' : 'bg-yellow-400'}`} />
+          <p className={`text-sm font-medium ${isDirector ? 'text-purple-800' : 'text-yellow-800'}`}>
             {pendingCount} submission{pendingCount !== 1 ? 's' : ''} awaiting your review
           </p>
-          <span className="ml-auto text-yellow-600 text-xs font-medium group-hover:underline">Review now →</span>
+          <span className={`ml-auto text-xs font-medium group-hover:underline ${isDirector ? 'text-purple-600' : 'text-yellow-600'}`}>
+            Review now →
+          </span>
         </Link>
       )}
 

@@ -17,6 +17,13 @@ router = APIRouter(prefix="/submissions", tags=["submissions"])
 
 STATION_SCOPED = {UserRole.STATION_OFFICER, UserRole.REGISTRAR}
 
+# Statuses the director is allowed to see (registrar has already approved)
+DIRECTOR_VISIBLE = [
+    SubmissionStatus.REGISTRAR_APPROVED,
+    SubmissionStatus.APPROVED,
+    SubmissionStatus.REJECTED,
+]
+
 
 @router.get("", response_model=List[SubmissionOut])
 def list_submissions(
@@ -28,10 +35,20 @@ def list_submissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Station officers and registrars only see their own station
     if current_user.role in STATION_SCOPED:
         if current_user.station_id is None:
             return []
         station_id = current_user.station_id
+
+    # Directors only see submissions that registrars have already approved
+    if current_user.role == UserRole.DIRECTOR:
+        if status and status not in DIRECTOR_VISIBLE:
+            return []
+        if not status:
+            return crud_sub.get_all(db, station_id=station_id, statuses=DIRECTOR_VISIBLE,
+                                    year=year, skip=skip, limit=limit)
+
     return crud_sub.get_all(db, station_id=station_id, status=status, year=year, skip=skip, limit=limit)
 
 
@@ -127,16 +144,42 @@ def review_submission(
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if current_user.role == UserRole.REGISTRAR and sub.station_id != current_user.station_id:
-        raise HTTPException(status_code=403, detail="You can only review submissions from your assigned station")
-    if sub.status not in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW):
-        raise HTTPException(status_code=400, detail="Submission is not in a reviewable state")
+
+    # Registrar: can only review their own station's submitted data
+    if current_user.role == UserRole.REGISTRAR:
+        if sub.station_id != current_user.station_id:
+            raise HTTPException(status_code=403, detail="You can only review submissions from your assigned station")
+        if sub.status not in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW):
+            raise HTTPException(status_code=400, detail="Only submitted data can be reviewed by the registrar")
+
+    # Director: can only review registrar-approved data
+    elif current_user.role == UserRole.DIRECTOR:
+        if sub.status != SubmissionStatus.REGISTRAR_APPROVED:
+            raise HTTPException(status_code=400, detail="Only registrar-approved submissions can be reviewed by the director")
+
+    # Admin: can review anything in a reviewable state
+    elif current_user.role == UserRole.ADMIN:
+        if sub.status not in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW,
+                               SubmissionStatus.REGISTRAR_APPROVED):
+            raise HTTPException(status_code=400, detail="Submission is not in a reviewable state")
 
     meta = get_audit_meta(request)
     if body.action == "approve":
-        updated = crud_sub.approve(db, sub, current_user.id)
-        audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
-                      resource_id=submission_id, **meta)
+        if current_user.role == UserRole.REGISTRAR or (
+            current_user.role == UserRole.ADMIN and
+            sub.status in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW)
+        ):
+            # Registrar approve: submitted → registrar_approved
+            updated = crud_sub.registrar_approve(db, sub, current_user.id)
+            audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
+                          resource_id=submission_id,
+                          new_value={"stage": "registrar_approved"}, **meta)
+        else:
+            # Director approve: registrar_approved → approved
+            updated = crud_sub.approve(db, sub, current_user.id)
+            audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
+                          resource_id=submission_id,
+                          new_value={"stage": "approved"}, **meta)
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")

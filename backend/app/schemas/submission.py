@@ -234,6 +234,7 @@ class SubmissionOut(SubmissionBase):
     reg136c_balance_cf: int
     photo3a_balance_cf: int
     # Meta
+    submitted_by_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     submitted_at: Optional[datetime] = None
