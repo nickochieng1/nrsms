@@ -5,13 +5,13 @@ import clsx from 'clsx'
 import nrbLogo from '@/images/nrb-kenya.svg'
 
 const NAV_ITEMS = [
-  { to: '/dashboard',       label: 'Dashboard',      roles: ['station_officer', 'registrar', 'director', 'admin'] },
-  { to: '/submissions/new', label: 'New Submission',  roles: ['station_officer', 'admin'] },
-  { to: '/submissions',     label: 'Submissions',     roles: ['station_officer', 'registrar', 'director', 'admin'] },
-  { to: '/reports',         label: 'Reports',         roles: ['registrar', 'director', 'admin'] },
-  { to: '/audit',           label: 'Audit Log',       roles: ['registrar', 'director', 'admin'] },
-  { to: '/stations',        label: 'Stations',        roles: ['director', 'admin'] },
-  { to: '/users',           label: 'Users',           roles: ['director', 'admin'] },
+  { to: '/dashboard',       label: 'Dashboard',      roles: ['station_officer', 'registrar', 'director', 'admin'], end: false },
+  { to: '/submissions/new', label: 'New Submission',  roles: ['station_officer', 'admin'],                         end: false },
+  { to: '/submissions',     label: 'Submissions',     roles: ['station_officer', 'registrar', 'director', 'admin'], end: true },
+  { to: '/reports',         label: 'Reports',         roles: ['registrar', 'director', 'admin'],                   end: false },
+  { to: '/audit',           label: 'Audit Log',       roles: ['registrar', 'director', 'admin'],                   end: false },
+  { to: '/stations',        label: 'Stations',        roles: ['director', 'admin'],                                end: false },
+  { to: '/users',           label: 'Users',           roles: ['director', 'admin'],                                end: false },
 ]
 
 interface SidebarProps {
@@ -60,6 +60,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             onClick={onClose}
             className={({ isActive }) =>
               clsx(
