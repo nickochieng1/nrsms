@@ -10,3 +10,8 @@ api_router.include_router(stations.router)
 api_router.include_router(submissions.router)
 api_router.include_router(audit.router)
 api_router.include_router(reports.router)
+
+
+@api_router.get("/health")
+def health():
+    return {"status": "ok"}
