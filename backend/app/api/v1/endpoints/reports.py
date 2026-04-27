@@ -18,6 +18,9 @@ from app.services.export import (
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
+# Submissions included in all reports — registrar-approved OR director-approved
+REPORTABLE = (SubmissionStatus.REGISTRAR_APPROVED, SubmissionStatus.APPROVED)
+
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -71,7 +74,7 @@ def summary_report(
 
     q = db.query(Submission).filter(
         Submission.period_year == year,
-        Submission.status == SubmissionStatus.APPROVED,
+        Submission.status.in_(REPORTABLE),
     )
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
@@ -132,7 +135,7 @@ def _query_submissions(
 ):
     q = (db.query(Submission)
          .filter(Submission.period_year == year,
-                 Submission.status == SubmissionStatus.APPROVED))
+                 Submission.status.in_(REPORTABLE)))
     if month:
         q = q.filter(Submission.period_month == month)
     if station_id:
