@@ -7,7 +7,7 @@ from app.core.dependencies import get_audit_meta, get_current_user, require_role
 from app.crud import submission as crud_sub
 from app.db.session import get_db
 from app.models.station import Station
-from app.models.submission import SubmissionStatus
+from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User, UserRole
 from app.schemas.submission import SubmissionCreate, SubmissionOut, SubmissionReview, SubmissionUpdate
 from app.services import audit as audit_svc
