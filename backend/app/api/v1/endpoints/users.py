@@ -51,7 +51,7 @@ def create_user(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.REGISTRAR)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
 ):
     user = crud_user.get(db, user_id)
     if not user:

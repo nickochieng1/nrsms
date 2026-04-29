@@ -20,7 +20,7 @@ def list_audit_logs(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.REGISTRAR)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
 ):
     q = db.query(AuditLog)
     if user_id:
