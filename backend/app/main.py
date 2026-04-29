@@ -126,4 +126,4 @@ def _seed_stations():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "2.0"}
+    return {"status": "ok"}
