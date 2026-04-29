@@ -28,36 +28,40 @@ const CUR_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => CUR_YEAR - i)
 
 export default function DashboardPage() {
-  const { user, isRegistrar, isDirector } = useAuth()
+  const { user, canApprove, canViewReports, myPendingStatus } = useAuth()
   const [year, setYear] = useState(CUR_YEAR)
 
-  const isStationScoped = user?.role === 'registrar'
-  const scopedStationId = isStationScoped ? (user?.station_id ?? undefined) : undefined
+  // Geographic scope derived from user's role assignment
+  const scopeStationId = user?.station_id ?? undefined
+  const scopeCounty    = user?.county    ?? undefined
+  const scopeRegion    = user?.region    ?? undefined
 
   const { data: stations } = useQuery({
     queryKey: ['stations'],
     queryFn: getStations,
-    enabled: isStationScoped,
+    enabled: !!scopeStationId,
   })
 
-  const stationName = isStationScoped
+  const stationName = scopeStationId
     ? (stations?.find((s) => s.id === user?.station_id)?.name ?? `Station #${user?.station_id}`)
     : null
 
+  const scopeLabel = scopeCounty ?? scopeRegion ?? stationName
+
   const { data: recentSubmissions } = useQuery({
-    queryKey: ['submissions', 'recent', scopedStationId],
+    queryKey: ['submissions', 'recent'],
     queryFn: () => getSubmissions({ limit: 8 }),
   })
 
   const { data: report } = useQuery({
-    queryKey: ['report', 'summary', year, scopedStationId],
-    queryFn: () => getSummaryReport(year, scopedStationId),
-    enabled: isDirector || isRegistrar,
+    queryKey: ['report', 'summary', year, scopeStationId, scopeCounty, scopeRegion],
+    queryFn: () => getSummaryReport(year, scopeStationId, scopeCounty, scopeRegion),
+    enabled: canViewReports,
   })
 
-  const pendingCount = recentSubmissions?.filter((s) =>
-    isDirector ? s.status === 'registrar_approved' : s.status === 'submitted'
-  ).length ?? 0
+  const pendingCount = myPendingStatus
+    ? (recentSubmissions?.filter((s) => s.status === myPendingStatus).length ?? 0)
+    : 0
 
   const monthlyBarData = report?.monthly.map((m) => ({
     name: m.month_name as string,
@@ -73,8 +77,10 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 mt-1">
             Welcome back, <span className="font-medium text-gray-700">{user?.full_name}</span>
-            {stationName && <span className="ml-1 text-primary-600 font-medium">— {stationName}</span>}
-            {!stationName && <span> — {new Date().toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+            {scopeLabel
+              ? <span className="ml-1 text-primary-600 font-medium">— {scopeLabel}</span>
+              : <span> — {new Date().toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            }
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -91,20 +97,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {(isRegistrar || isDirector) && pendingCount > 0 && (
+      {canApprove && myPendingStatus && pendingCount > 0 && (
         <Link
-          to={`/submissions?status=${isDirector ? 'registrar_approved' : 'submitted'}`}
-          className={`mb-6 p-4 rounded-xl flex items-center gap-3 hover:opacity-90 transition-opacity group border ${
-            isDirector
-              ? 'bg-purple-50 border-purple-300'
-              : 'bg-yellow-50 border-yellow-300'
-          }`}
+          to={`/submissions?status=${myPendingStatus}`}
+          className="mb-6 p-4 rounded-xl flex items-center gap-3 hover:opacity-90 transition-opacity group border bg-yellow-50 border-yellow-300"
         >
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isDirector ? 'bg-purple-400' : 'bg-yellow-400'}`} />
-          <p className={`text-sm font-medium ${isDirector ? 'text-purple-800' : 'text-yellow-800'}`}>
+          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-yellow-400" />
+          <p className="text-sm font-medium text-yellow-800">
             {pendingCount} submission{pendingCount !== 1 ? 's' : ''} awaiting your review
           </p>
-          <span className={`ml-auto text-xs font-medium group-hover:underline ${isDirector ? 'text-purple-600' : 'text-yellow-600'}`}>
+          <span className="ml-auto text-xs font-medium text-yellow-600 group-hover:underline">
             Review now →
           </span>
         </Link>

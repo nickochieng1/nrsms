@@ -13,6 +13,8 @@ export async function createUser(payload: {
   password: string
   role: UserRole
   station_id?: number | null
+  county?: string | null
+  region?: string | null
 }): Promise<User> {
   const { data } = await apiClient.post<User>('/users', payload)
   return data

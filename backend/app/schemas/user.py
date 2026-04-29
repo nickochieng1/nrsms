@@ -10,8 +10,10 @@ class UserBase(BaseModel):
     full_name: str
     email: EmailStr
     username: Optional[str] = None
-    role: UserRole = UserRole.STATION_OFFICER
+    role: UserRole = UserRole.CLERK
     station_id: Optional[int] = None
+    county: Optional[str] = None
+    region: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -24,6 +26,8 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     role: Optional[UserRole] = None
     station_id: Optional[int] = None
+    county: Optional[str] = None
+    region: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
 
@@ -47,7 +51,6 @@ class TokenPayload(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    # Accepts either username or email
     username: Optional[str] = None
     email: Optional[str] = None
     password: str

@@ -14,10 +14,16 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, enum.Enum):
-    STATION_OFFICER = "station_officer"
-    REGISTRAR = "registrar"
-    DIRECTOR = "director"
-    ADMIN = "admin"
+    # ── Field staff ───────────────────────────────────────────
+    CLERK               = "clerk"                # sub-county data entry
+    SUB_COUNTY_REGISTRAR = "sub_county_registrar" # approves clerk's data
+    COUNTY_REGISTRAR    = "county_registrar"      # approves sub-county data
+    REGIONAL_REGISTRAR  = "regional_registrar"    # approves county data → HQ
+    # ── Headquarters (Statistics dept) ───────────────────────
+    HQ_CLERK            = "hq_clerk"              # views at HQ
+    HQ_OFFICER          = "hq_officer"            # heads HQ clerks, approves regional data
+    DIRECTOR            = "director"              # Director of Statistics
+    ADMIN               = "admin"                 # system administrator
 
 
 class User(Base):
@@ -28,10 +34,19 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(100), unique=True, index=True, nullable=True)
     email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(300))
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.STATION_OFFICER)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.CLERK)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Geographic scope — which field(s) are set depends on role:
+    #   clerk / sub_county_registrar → station_id
+    #   county_registrar             → county
+    #   regional_registrar           → region
+    #   HQ roles                     → none required
     station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id"), nullable=True)
+    county: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -163,7 +163,8 @@ function RegisterTable({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function NewSubmissionPage() {
-  const { user, isStationLocked } = useAuth()
+  const { user, isClerk } = useAuth()
+  const isStationLocked = isClerk
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [apiError, setApiError] = useState<string | null>(null)

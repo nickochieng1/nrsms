@@ -20,7 +20,7 @@ def list_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.REGISTRAR)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
 ):
     return crud_user.get_all(db, skip=skip, limit=limit)
 

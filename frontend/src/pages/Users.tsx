@@ -9,13 +9,20 @@ import { ROLE_LABELS, formatDate } from '@/utils/format'
 import { useAuth } from '@/hooks/useAuth'
 import type { UserRole } from '@/types'
 
+const NEEDS_STATION  = new Set<UserRole>(['clerk', 'sub_county_registrar'])
+const NEEDS_COUNTY   = new Set<UserRole>(['county_registrar'])
+const NEEDS_REGION   = new Set<UserRole>(['regional_registrar'])
+
 const schema = z.object({
-  full_name: z.string().min(2),
-  username: z.string().min(3, 'Username must be at least 3 characters').regex(/^\S+$/, 'No spaces allowed'),
-  email: z.string().email(),
-  password: z.string().min(6),
-  role: z.enum(['station_officer', 'registrar', 'director', 'admin']),
+  full_name:  z.string().min(2),
+  username:   z.string().min(3, 'Username must be at least 3 characters').regex(/^\S+$/, 'No spaces allowed'),
+  email:      z.string().email(),
+  password:   z.string().min(6),
+  role:       z.enum(['clerk', 'sub_county_registrar', 'county_registrar', 'regional_registrar',
+                      'hq_clerk', 'hq_officer', 'director', 'admin']),
   station_id: z.coerce.number().nullable().optional(),
+  county:     z.string().optional(),
+  region:     z.string().optional(),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -33,15 +40,17 @@ export default function UsersPage() {
 
   const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { role: 'station_officer' },
+    defaultValues: { role: 'clerk' },
   })
 
-  const role = watch('role')
+  const role = watch('role') as UserRole
 
   const createMutation = useMutation({
     mutationFn: (v: FormValues) => createUser({
       ...v,
-      station_id: v.station_id || null,
+      station_id: NEEDS_STATION.has(v.role as UserRole) ? (v.station_id || null) : null,
+      county:     NEEDS_COUNTY.has(v.role as UserRole)  ? (v.county || null) : null,
+      region:     NEEDS_REGION.has(v.role as UserRole)  ? (v.region || null) : null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
@@ -78,7 +87,12 @@ export default function UsersPage() {
     },
   })
 
-  const needsStation = role === 'station_officer' || role === 'registrar'
+  const needsStation = NEEDS_STATION.has(role)
+  const needsCounty  = NEEDS_COUNTY.has(role)
+  const needsRegion  = NEEDS_REGION.has(role)
+
+  const counties = [...new Set((stations ?? []).map(s => s.county))].sort()
+  const regions  = [...new Set((stations ?? []).map(s => s.region))].sort()
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -117,9 +131,18 @@ export default function UsersPage() {
             <div>
               <label className="label">Role</label>
               <select className="input" {...register('role')}>
-                {(['station_officer', 'registrar', 'director', 'admin'] as UserRole[]).map((r) => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                ))}
+                <optgroup label="Field">
+                  <option value="clerk">Clerk</option>
+                  <option value="sub_county_registrar">Sub-County Registrar</option>
+                  <option value="county_registrar">County Registrar</option>
+                  <option value="regional_registrar">Regional Registrar</option>
+                </optgroup>
+                <optgroup label="Headquarters">
+                  <option value="hq_clerk">HQ Clerk</option>
+                  <option value="hq_officer">HQ Officer</option>
+                  <option value="director">Director of Statistics</option>
+                  <option value="admin">System Administrator</option>
+                </optgroup>
               </select>
             </div>
             {needsStation && (
@@ -128,6 +151,24 @@ export default function UsersPage() {
                 <select className="input" {...register('station_id')}>
                   <option value="">Select station…</option>
                   {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county}</option>)}
+                </select>
+              </div>
+            )}
+            {needsCounty && (
+              <div>
+                <label className="label">Assigned County</label>
+                <select className="input" {...register('county')}>
+                  <option value="">Select county…</option>
+                  {counties.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+            {needsRegion && (
+              <div>
+                <label className="label">Assigned Region</label>
+                <select className="input" {...register('region')}>
+                  <option value="">Select region…</option>
+                  {regions.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
             )}
@@ -156,7 +197,7 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Username</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Station</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Scope</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
@@ -171,7 +212,11 @@ export default function UsersPage() {
                   <td className="px-4 py-3">
                     <span className="badge bg-blue-50 text-blue-700">{ROLE_LABELS[u.role]}</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-500">{u.station_id ? `#${u.station_id}` : '—'}</td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {u.county   ? u.county   :
+                     u.region   ? u.region   :
+                     u.station_id ? stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}` : '—'}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {u.is_active ? 'Active' : 'Inactive'}

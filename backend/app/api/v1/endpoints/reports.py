@@ -18,8 +18,13 @@ from app.services.export import (
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-# Submissions included in all reports — registrar-approved OR director-approved
-REPORTABLE = (SubmissionStatus.REGISTRAR_APPROVED, SubmissionStatus.APPROVED)
+# Submissions included in all reports — anything approved at any stage
+REPORTABLE = (
+    SubmissionStatus.SUB_COUNTY_APPROVED,
+    SubmissionStatus.COUNTY_APPROVED,
+    SubmissionStatus.REGIONAL_APPROVED,
+    SubmissionStatus.APPROVED,
+)
 
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
@@ -64,13 +69,18 @@ def _zero_month() -> dict:
 def summary_report(
     year: int = Query(...),
     station_id: Optional[int] = Query(None),
+    county: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Registrars are locked to their own station
-    if current_user.role == UserRole.REGISTRAR:
+    # Lock each field role to their geographic scope
+    if current_user.role == UserRole.SUB_COUNTY_REGISTRAR:
         station_id = current_user.station_id
+    elif current_user.role == UserRole.COUNTY_REGISTRAR:
+        county = current_user.county
+    elif current_user.role == UserRole.REGIONAL_REGISTRAR:
+        region = current_user.region
 
     q = db.query(Submission).filter(
         Submission.period_year == year,
@@ -78,6 +88,9 @@ def summary_report(
     )
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
+    elif county:
+        station_ids = [s.id for s in db.query(Station).filter(Station.county == county).all()]
+        q = q.filter(Submission.station_id.in_(station_ids))
     elif region:
         station_ids = [s.id for s in db.query(Station).filter(Station.region == region).all()]
         q = q.filter(Submission.station_id.in_(station_ids))
@@ -149,7 +162,10 @@ def excel_report(
     month: Optional[int] = Query(None),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.REGISTRAR)),
+    _: User = Depends(require_role(
+        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
+        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
+    )),
 ):
     rows   = _query_submissions(db, year, month, station_id)
     lookup = _get_station_lookup(db)
@@ -169,7 +185,10 @@ def pdf_report(
     month: Optional[int] = Query(None),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    _: User = Depends(require_role(
+        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
+        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
+    )),
 ):
     rows   = _query_submissions(db, year, month, station_id)
     lookup = _get_station_lookup(db)
@@ -189,7 +208,10 @@ def word_report(
     month: Optional[int] = Query(None),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    _: User = Depends(require_role(
+        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
+        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
+    )),
 ):
     rows   = _query_submissions(db, year, month, station_id)
     lookup = _get_station_lookup(db)
@@ -209,7 +231,10 @@ def csv_report(
     month: Optional[int] = Query(None),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.REGISTRAR)),
+    _: User = Depends(require_role(
+        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
+        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
+    )),
 ):
     rows   = _query_submissions(db, year, month, station_id)
     lookup = _get_station_lookup(db)

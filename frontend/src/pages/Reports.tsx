@@ -35,12 +35,13 @@ export default function ReportsPage() {
   const counties = [...new Set((stations ?? []).filter((s) => s.region === region).map((s) => s.county))].sort()
   const stationList = (stations ?? []).filter((s) => s.region === region && s.county === county).sort((a, b) => a.name.localeCompare(b.name))
 
-  // Only pass region to API when no specific station is selected
-  const activeRegion = stationId ? undefined : (region || undefined)
+  // Pass the most specific non-empty scope to the API
+  const activeRegion  = stationId ? undefined : (county ? undefined : (region || undefined))
+  const activeCounty  = stationId ? undefined : (county || undefined)
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, stationId, activeRegion],
-    queryFn: () => getSummaryReport(year, stationId, activeRegion),
+    queryKey: ['report', 'summary', year, stationId, activeCounty, activeRegion],
+    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion),
   })
 
   function handleRegionChange(r: string) {
@@ -114,7 +115,7 @@ export default function ReportsPage() {
     } else {
       // Excel and CSV: download immediately (full year or with month filter)
       const urlFn = fmt === 'csv' ? getCsvReportUrl : getExcelReportUrl
-      const url   = urlFn(year, undefined, stationId, activeRegion)
+      const url   = urlFn(year, undefined, stationId, activeCounty, activeRegion)
       const ext   = fmt === 'csv' ? 'csv' : 'xlsx'
       downloadFile(url, `nrb_report_${year}.${ext}`)
     }
@@ -173,8 +174,8 @@ export default function ReportsPage() {
                   const m   = pickedMonth ? Number(pickedMonth) : undefined
                   const ext = exportFormat === 'pdf' ? 'pdf' : 'docx'
                   const url = exportFormat === 'pdf'
-                    ? getPdfReportUrl(year, m, stationId, activeRegion)
-                    : getWordReportUrl(year, m, stationId, activeRegion)
+                    ? getPdfReportUrl(year, m, stationId, activeCounty, activeRegion)
+                    : getWordReportUrl(year, m, stationId, activeCounty, activeRegion)
                   const suffix = m ? `_${String(m).padStart(2, '0')}` : ''
                   downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
                   setExportFormat(null)

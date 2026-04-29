@@ -4,14 +4,18 @@ import { ROLE_LABELS } from '@/utils/format'
 import clsx from 'clsx'
 import nrbLogo from '@/images/nrb-kenya.svg'
 
+const ALL_ROLES = ['clerk','sub_county_registrar','county_registrar','regional_registrar','hq_clerk','hq_officer','director','admin']
+const HQ        = ['hq_clerk','hq_officer','director','admin']
+const MANAGERS  = ['hq_officer','director','admin']
+
 const NAV_ITEMS = [
-  { to: '/dashboard',       label: 'Dashboard',      roles: ['station_officer', 'registrar', 'director', 'admin'], end: false },
-  { to: '/submissions/new', label: 'New Submission',  roles: ['station_officer', 'admin'],                         end: false },
-  { to: '/submissions',     label: 'Submissions',     roles: ['station_officer', 'registrar', 'director', 'admin'], end: true },
-  { to: '/reports',         label: 'Reports',         roles: ['registrar', 'director', 'admin'],                   end: false },
-  { to: '/audit',           label: 'Audit Log',       roles: ['registrar', 'director', 'admin'],                   end: false },
-  { to: '/stations',        label: 'Stations',        roles: ['director', 'admin'],                                end: false },
-  { to: '/users',           label: 'Users',           roles: ['director', 'admin'],                                end: false },
+  { to: '/dashboard',       label: 'Dashboard',      roles: ALL_ROLES,                                          end: false },
+  { to: '/submissions/new', label: 'New Submission',  roles: ['clerk', 'admin'],                                 end: false },
+  { to: '/submissions',     label: 'Submissions',     roles: ALL_ROLES,                                          end: true  },
+  { to: '/reports',         label: 'Reports',         roles: ['county_registrar','regional_registrar',...HQ],    end: false },
+  { to: '/audit',           label: 'Audit Log',       roles: MANAGERS,                                           end: false },
+  { to: '/stations',        label: 'Stations',        roles: ['director','admin'],                               end: false },
+  { to: '/users',           label: 'Users',           roles: MANAGERS,                                           end: false },
 ]
 
 interface SidebarProps {

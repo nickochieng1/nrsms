@@ -30,6 +30,7 @@ app.include_router(api_router)
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
     _seed_superuser()
     _seed_stations()
 
@@ -53,6 +54,26 @@ def _seed_superuser():
         elif not existing.username:
             existing.username = "admin"
             db.commit()
+
+
+def _migrate_schema():
+    """Add new columns and remap old role/status values to new ones."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for col in ("county VARCHAR(200)", "region VARCHAR(200)"):
+            try:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col}"))
+                conn.commit()
+            except Exception:
+                pass
+        # Map old roles → new roles
+        for old, new in [("station_officer", "clerk"), ("registrar", "sub_county_registrar")]:
+            conn.execute(text("UPDATE users SET role=:n WHERE role=:o"), {"n": new, "o": old})
+        conn.commit()
+        # Map old submission statuses → new ones
+        for old, new in [("registrar_approved", "sub_county_approved"), ("under_review", "submitted")]:
+            conn.execute(text("UPDATE submissions SET status=:n WHERE status=:o"), {"n": new, "o": old})
+        conn.commit()
 
 
 def _seed_stations():

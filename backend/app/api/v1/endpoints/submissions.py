@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_audit_meta, get_current_user, require_role
 from app.crud import submission as crud_sub
 from app.db.session import get_db
+from app.models.station import Station
 from app.models.submission import SubmissionStatus
 from app.models.user import User, UserRole
 from app.schemas.submission import SubmissionCreate, SubmissionOut, SubmissionReview, SubmissionUpdate
@@ -14,15 +15,24 @@ from app.services.validation import validate_submission
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
+# ── Role groups ────────────────────────────────────────────────────────────────
+FIELD_STATION = {UserRole.CLERK, UserRole.SUB_COUNTY_REGISTRAR}
+HQ_ROLES      = {UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN}
 
-STATION_SCOPED = {UserRole.STATION_OFFICER, UserRole.REGISTRAR}
+# What each role sees in the submissions list
+COUNTY_VISIBLE   = [SubmissionStatus.SUB_COUNTY_APPROVED, SubmissionStatus.COUNTY_APPROVED,
+                    SubmissionStatus.REGIONAL_APPROVED, SubmissionStatus.APPROVED, SubmissionStatus.REJECTED]
+REGIONAL_VISIBLE = [SubmissionStatus.COUNTY_APPROVED, SubmissionStatus.REGIONAL_APPROVED,
+                    SubmissionStatus.APPROVED, SubmissionStatus.REJECTED]
+HQ_VISIBLE       = [SubmissionStatus.REGIONAL_APPROVED, SubmissionStatus.APPROVED, SubmissionStatus.REJECTED]
 
-# Statuses the director is allowed to see (registrar has already approved)
-DIRECTOR_VISIBLE = [
-    SubmissionStatus.REGISTRAR_APPROVED,
-    SubmissionStatus.APPROVED,
-    SubmissionStatus.REJECTED,
-]
+
+def _station_ids_for_county(db: Session, county: str) -> List[int]:
+    return [s.id for s in db.query(Station).filter(Station.county == county).all()]
+
+
+def _station_ids_for_region(db: Session, region: str) -> List[int]:
+    return [s.id for s in db.query(Station).filter(Station.region == region).all()]
 
 
 @router.get("", response_model=List[SubmissionOut])
@@ -31,25 +41,44 @@ def list_submissions(
     status: Optional[SubmissionStatus] = Query(None),
     year: Optional[int] = Query(None),
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 200,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Station officers and registrars only see their own station
-    if current_user.role in STATION_SCOPED:
+    role = current_user.role
+
+    # Clerk & Sub-County Registrar — their station only, all statuses
+    if role in FIELD_STATION:
         if current_user.station_id is None:
             return []
-        station_id = current_user.station_id
+        return crud_sub.get_all(db, station_id=current_user.station_id,
+                                status=status, year=year, skip=skip, limit=limit)
 
-    # Directors only see submissions that registrars have already approved
-    if current_user.role == UserRole.DIRECTOR:
-        if status and status not in DIRECTOR_VISIBLE:
+    # County Registrar — their county, sub_county_approved and above
+    if role == UserRole.COUNTY_REGISTRAR:
+        if not current_user.county:
             return []
-        if not status:
-            return crud_sub.get_all(db, station_id=station_id, statuses=DIRECTOR_VISIBLE,
-                                    year=year, skip=skip, limit=limit)
+        ids = _station_ids_for_county(db, current_user.county)
+        visible = [status] if status and status in COUNTY_VISIBLE else COUNTY_VISIBLE
+        return crud_sub.get_all(db, station_ids=ids, statuses=visible,
+                                year=year, skip=skip, limit=limit)
 
-    return crud_sub.get_all(db, station_id=station_id, status=status, year=year, skip=skip, limit=limit)
+    # Regional Registrar — their region, county_approved and above
+    if role == UserRole.REGIONAL_REGISTRAR:
+        if not current_user.region:
+            return []
+        ids = _station_ids_for_region(db, current_user.region)
+        visible = [status] if status and status in REGIONAL_VISIBLE else REGIONAL_VISIBLE
+        return crud_sub.get_all(db, station_ids=ids, statuses=visible,
+                                year=year, skip=skip, limit=limit)
+
+    # HQ — regional_approved and above
+    if role in HQ_ROLES:
+        visible = [status] if status and status in HQ_VISIBLE else HQ_VISIBLE
+        return crud_sub.get_all(db, station_id=station_id, statuses=visible,
+                                year=year, skip=skip, limit=limit)
+
+    return []
 
 
 @router.post("", response_model=SubmissionOut, status_code=status.HTTP_201_CREATED)
@@ -57,9 +86,9 @@ def create_submission(
     body: SubmissionCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.STATION_OFFICER, UserRole.REGISTRAR, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.CLERK, UserRole.ADMIN)),
 ):
-    if current_user.role in STATION_SCOPED and body.station_id != current_user.station_id:
+    if current_user.role == UserRole.CLERK and body.station_id != current_user.station_id:
         raise HTTPException(status_code=403, detail="You can only submit for your assigned station")
 
     warnings = validate_submission(body)
@@ -68,8 +97,9 @@ def create_submission(
     audit_svc.log(
         db, user_id=current_user.id, action="CREATE", resource="submission",
         resource_id=submission.id,
-        new_value={"station_id": body.station_id, "period": f"{body.period_month}/{body.period_year}",
-                   "app_grand_total": submission.app_grand_total, "warnings": warnings},
+        new_value={"station_id": body.station_id,
+                   "period": f"{body.period_month}/{body.period_year}",
+                   "warnings": warnings},
         **meta,
     )
     return submission
@@ -84,8 +114,7 @@ def get_submission(
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if current_user.role in STATION_SCOPED and sub.station_id != current_user.station_id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    _assert_can_read(current_user, sub, db)
     return sub
 
 
@@ -100,16 +129,15 @@ def update_submission(
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if sub.status == SubmissionStatus.APPROVED:
-        raise HTTPException(status_code=400, detail="Cannot edit an approved submission")
-    if current_user.role == UserRole.STATION_OFFICER and sub.submitted_by != current_user.id:
+    if sub.status not in (SubmissionStatus.DRAFT, SubmissionStatus.REJECTED):
+        raise HTTPException(status_code=400, detail="Only draft or rejected submissions can be edited")
+    if current_user.role == UserRole.CLERK and sub.submitted_by != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    old = {"grand_total": sub.grand_total}
     updated = crud_sub.update(db, sub, body)
     meta = get_audit_meta(request)
     audit_svc.log(db, user_id=current_user.id, action="UPDATE", resource="submission",
-                  resource_id=submission_id, old_value=old,
+                  resource_id=submission_id,
                   new_value=body.model_dump(exclude_unset=True), **meta)
     return updated
 
@@ -119,13 +147,13 @@ def submit_submission(
     submission_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.STATION_OFFICER, UserRole.REGISTRAR, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(UserRole.CLERK, UserRole.ADMIN)),
 ):
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if sub.status != SubmissionStatus.DRAFT:
-        raise HTTPException(status_code=400, detail="Only draft submissions can be submitted")
+    if sub.status not in (SubmissionStatus.DRAFT, SubmissionStatus.REJECTED):
+        raise HTTPException(status_code=400, detail="Only draft or rejected submissions can be submitted")
     updated = crud_sub.submit(db, sub)
     meta = get_audit_meta(request)
     audit_svc.log(db, user_id=current_user.id, action="SUBMIT", resource="submission",
@@ -139,47 +167,63 @@ def review_submission(
     body: SubmissionReview,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR, UserRole.ADMIN)),
+    current_user: User = Depends(require_role(
+        UserRole.SUB_COUNTY_REGISTRAR, UserRole.COUNTY_REGISTRAR,
+        UserRole.REGIONAL_REGISTRAR, UserRole.HQ_OFFICER,
+        UserRole.DIRECTOR, UserRole.ADMIN,
+    )),
 ):
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
 
-    # Registrar: can only review their own station's submitted data
-    if current_user.role == UserRole.REGISTRAR:
+    role = current_user.role
+    station = db.get(Station, sub.station_id)
+
+    # ── Determine approve function & validate scope ──
+    if role == UserRole.SUB_COUNTY_REGISTRAR:
         if sub.station_id != current_user.station_id:
-            raise HTTPException(status_code=403, detail="You can only review submissions from your assigned station")
-        if sub.status not in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW):
-            raise HTTPException(status_code=400, detail="Only submitted data can be reviewed by the registrar")
+            raise HTTPException(403, "You can only review submissions from your assigned station")
+        if sub.status != SubmissionStatus.SUBMITTED:
+            raise HTTPException(400, "This submission is not awaiting sub-county review")
+        approve_fn = crud_sub.sub_county_approve
 
-    # Director: can only review registrar-approved data
-    elif current_user.role == UserRole.DIRECTOR:
-        if sub.status != SubmissionStatus.REGISTRAR_APPROVED:
-            raise HTTPException(status_code=400, detail="Only registrar-approved submissions can be reviewed by the director")
+    elif role == UserRole.COUNTY_REGISTRAR:
+        if not station or station.county != current_user.county:
+            raise HTTPException(403, "This submission is not in your county")
+        if sub.status != SubmissionStatus.SUB_COUNTY_APPROVED:
+            raise HTTPException(400, "This submission is not awaiting county review")
+        approve_fn = crud_sub.county_approve
 
-    # Admin: can review anything in a reviewable state
-    elif current_user.role == UserRole.ADMIN:
-        if sub.status not in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW,
-                               SubmissionStatus.REGISTRAR_APPROVED):
-            raise HTTPException(status_code=400, detail="Submission is not in a reviewable state")
+    elif role == UserRole.REGIONAL_REGISTRAR:
+        if not station or station.region != current_user.region:
+            raise HTTPException(403, "This submission is not in your region")
+        if sub.status != SubmissionStatus.COUNTY_APPROVED:
+            raise HTTPException(400, "This submission is not awaiting regional review")
+        approve_fn = crud_sub.regional_approve
+
+    elif role in (UserRole.HQ_OFFICER, UserRole.DIRECTOR):
+        if sub.status != SubmissionStatus.REGIONAL_APPROVED:
+            raise HTTPException(400, "This submission is not awaiting HQ review")
+        approve_fn = crud_sub.approve
+
+    else:  # ADMIN — can approve at any pending stage
+        stage_map = {
+            SubmissionStatus.SUBMITTED:           crud_sub.sub_county_approve,
+            SubmissionStatus.SUB_COUNTY_APPROVED: crud_sub.county_approve,
+            SubmissionStatus.COUNTY_APPROVED:     crud_sub.regional_approve,
+            SubmissionStatus.REGIONAL_APPROVED:   crud_sub.approve,
+        }
+        approve_fn = stage_map.get(sub.status)
+        if not approve_fn:
+            raise HTTPException(400, "Submission is not in a reviewable state")
 
     meta = get_audit_meta(request)
     if body.action == "approve":
-        if current_user.role == UserRole.REGISTRAR or (
-            current_user.role == UserRole.ADMIN and
-            sub.status in (SubmissionStatus.SUBMITTED, SubmissionStatus.UNDER_REVIEW)
-        ):
-            # Registrar approve: submitted → registrar_approved
-            updated = crud_sub.registrar_approve(db, sub, current_user.id)
-            audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
-                          resource_id=submission_id,
-                          new_value={"stage": "registrar_approved"}, **meta)
-        else:
-            # Director approve: registrar_approved → approved
-            updated = crud_sub.approve(db, sub, current_user.id)
-            audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
-                          resource_id=submission_id,
-                          new_value={"stage": "approved"}, **meta)
+        updated = approve_fn(db, sub, current_user.id)
+        audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
+                      resource_id=submission_id,
+                      new_value={"stage": updated.status, "role": role}, **meta)
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
@@ -190,3 +234,19 @@ def review_submission(
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
 
     return updated
+
+
+def _assert_can_read(user: User, sub: Submission, db: Session) -> None:
+    role = user.role
+    if role in FIELD_STATION:
+        if sub.station_id != user.station_id:
+            raise HTTPException(403, "Access denied")
+    elif role == UserRole.COUNTY_REGISTRAR:
+        station = db.get(Station, sub.station_id)
+        if not station or station.county != user.county:
+            raise HTTPException(403, "Access denied")
+    elif role == UserRole.REGIONAL_REGISTRAR:
+        station = db.get(Station, sub.station_id)
+        if not station or station.region != user.region:
+            raise HTTPException(403, "Access denied")
+    # HQ roles can read anything in HQ_VISIBLE; admin can read all

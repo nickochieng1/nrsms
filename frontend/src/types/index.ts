@@ -1,4 +1,12 @@
-export type UserRole = 'station_officer' | 'registrar' | 'director' | 'admin'
+export type UserRole =
+  | 'clerk'
+  | 'sub_county_registrar'
+  | 'county_registrar'
+  | 'regional_registrar'
+  | 'hq_clerk'
+  | 'hq_officer'
+  | 'director'
+  | 'admin'
 
 export interface User {
   id: number
@@ -7,6 +15,8 @@ export interface User {
   email: string
   role: UserRole
   station_id: number | null
+  county: string | null
+  region: string | null
   is_active: boolean
   must_change_password: boolean
   created_at: string
@@ -20,7 +30,14 @@ export interface Station {
   code: string
 }
 
-export type SubmissionStatus = 'draft' | 'submitted' | 'under_review' | 'registrar_approved' | 'approved' | 'rejected'
+export type SubmissionStatus =
+  | 'draft'
+  | 'submitted'
+  | 'sub_county_approved'
+  | 'county_approved'
+  | 'regional_approved'
+  | 'approved'
+  | 'rejected'
 
 export type NrbCat = 'npr' | 'replacements' | 'changes' | 'duplicates' | 'type4' | 'type5'
 export type ModulePrefix = 'app' | 'ids' | 'rej'

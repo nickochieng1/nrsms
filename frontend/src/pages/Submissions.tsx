@@ -11,7 +11,7 @@ const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function SubmissionsPage() {
-  const { isRegistrar, isDirector } = useAuth()
+  const { canApprove, myPendingStatus } = useAuth()
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | ''>((searchParams.get('status') as SubmissionStatus) || '')
@@ -42,12 +42,10 @@ export default function SubmissionsPage() {
     },
   })
 
-  const canReview = isRegistrar || isDirector
+  const canReview = canApprove
 
   function handleRowClick(sub: Submission) {
-    const canReviewNow =
-      (isRegistrar && sub.status === 'submitted') ||
-      (isDirector && sub.status === 'registrar_approved')
+    const canReviewNow = canApprove && myPendingStatus && sub.status === myPendingStatus
     if (canReviewNow) {
       setReviewModal(sub)
     } else {
@@ -121,11 +119,8 @@ export default function SubmissionsPage() {
                     <td className="px-4 py-3 font-medium">
                       {MONTH_SHORT[sub.period_month - 1]} {sub.period_year}
                       <span className="ml-2 text-xs text-gray-400">#{sub.id}</span>
-                      {isRegistrar && sub.status === 'submitted' && (
+                      {canApprove && myPendingStatus && sub.status === myPendingStatus && (
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
-                      )}
-                      {isDirector && sub.status === 'registrar_approved' && (
-                        <span className="ml-2 text-xs text-purple-600 font-semibold">· click to review</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
@@ -151,7 +146,7 @@ export default function SubmissionsPage() {
                             Submit
                           </button>
                         )}
-                        {canReview && sub.status === 'submitted' && (
+                        {canReview && myPendingStatus && sub.status === myPendingStatus && (
                           <>
                             <button
                               onClick={() => reviewMutation.mutate({ id: sub.id, action: 'approve' })}
