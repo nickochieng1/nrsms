@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createSubmission } from '@/api/submissions'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
+import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 import { StationPicker } from '@/components/forms/StationPicker'
 import { MONTH_NAMES } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, CAT_COLORS, MODULE_COLORS, type ModulePrefix, type NrbCat } from '@/types'
@@ -168,10 +169,12 @@ export default function NewSubmissionPage() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [apiError, setApiError] = useState<string | null>(null)
+  const [savedOffline, setSavedOffline] = useState(false)
   const [activeTab, setActiveTab] = useState(0)
+  const { isOnline, addToQueue } = useOfflineQueue()
 
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
-  const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<FormValues>({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       station_id: user?.station_id ?? 0,
@@ -190,6 +193,22 @@ export default function NewSubmissionPage() {
       setApiError(err.response?.data?.detail ?? 'Failed to save submission')
     },
   })
+
+  const handleFormSubmit = (values: FormValues) => {
+    if (!isOnline) {
+      const station = stations?.find(s => s.id === values.station_id)
+      const monthName = MONTH_NAMES[values.period_month - 1]
+      addToQueue(values as unknown as Record<string, unknown>, {
+        stationName: station?.name,
+        period: `${monthName} ${values.period_year}`,
+      })
+      setSavedOffline(true)
+      reset({ station_id: user?.station_id ?? 0, period_month: new Date().getMonth() + 1, period_year: new Date().getFullYear() })
+      setActiveTab(0)
+      return
+    }
+    mutation.mutate(values)
+  }
 
   const TABS = [
     { label: '1. Applications to HQ',   short: 'Applications' },
@@ -233,7 +252,22 @@ export default function NewSubmissionPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit((v) => mutation.mutate(v))}>
+      {savedOffline && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Submission saved on this device. It will be uploaded automatically when your internet connection is restored.</span>
+        </div>
+      )}
+
+      {!isOnline && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+          You are currently offline. Fill in the form and click Save — it will be stored on this device and synced when you reconnect.
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit(handleFormSubmit)}>
         {/* ── Period & Station ── */}
         <div className="card mb-5">
           <h2 className="font-semibold text-gray-800 mb-4">Reporting Period &amp; Station</h2>
@@ -501,7 +535,7 @@ export default function NewSubmissionPage() {
           <div className="flex gap-3">
             <button type="button" onClick={() => navigate(-1)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={isSubmitting} className="btn-primary">
-              {isSubmitting ? 'Saving…' : 'Save as Draft'}
+              {isSubmitting ? 'Saving…' : isOnline ? 'Save as Draft' : 'Save Offline'}
             </button>
           </div>
         </div>
