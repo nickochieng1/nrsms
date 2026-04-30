@@ -5,9 +5,9 @@ export const MONTH_NAMES = [
 
 export const STATUS_LABELS: Record<string, string> = {
   draft:               'Draft',
-  submitted:           'Awaiting Sub-County Review',
-  sub_county_approved: 'Awaiting County Review',
-  county_approved:     'Awaiting Regional Review',
+  submitted:           'Awaiting Deputy Registrar Review',
+  sub_county_approved: 'Awaiting County Registrar Review',
+  county_approved:     'Awaiting Regional Registrar Review',
   regional_approved:   'Awaiting HQ Review',
   approved:            'Approved',
   rejected:            'Rejected',
@@ -26,9 +26,9 @@ export const STATUS_COLORS: Record<string, string> = {
 export const ROLE_LABELS: Record<string, string> = {
   // Field
   clerk:                'Clerk',
-  sub_county_registrar: 'Sub-County Registrar',
-  county_registrar:     'County Registrar',
-  regional_registrar:   'Regional Registrar',
+  sub_county_registrar: 'Deputy County Registrar of Persons',
+  county_registrar:     'County Registrar of Persons',
+  regional_registrar:   'Regional Registrar of Persons',
   // Headquarters
   hq_clerk:             'HQ Clerk',
   hq_officer:           'HQ Officer',

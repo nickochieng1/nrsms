@@ -1,6 +1,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_audit_meta, get_current_user, require_role
@@ -28,11 +29,11 @@ HQ_VISIBLE       = [SubmissionStatus.REGIONAL_APPROVED, SubmissionStatus.APPROVE
 
 
 def _station_ids_for_county(db: Session, county: str) -> List[int]:
-    return [s.id for s in db.query(Station).filter(Station.county == county).all()]
+    return [s.id for s in db.query(Station).filter(func.lower(Station.county) == county.lower()).all()]
 
 
 def _station_ids_for_region(db: Session, region: str) -> List[int]:
-    return [s.id for s in db.query(Station).filter(Station.region == region).all()]
+    return [s.id for s in db.query(Station).filter(func.lower(Station.region) == region.lower()).all()]
 
 
 @router.get("", response_model=List[SubmissionOut])
@@ -189,14 +190,14 @@ def review_submission(
         approve_fn = crud_sub.sub_county_approve
 
     elif role == UserRole.COUNTY_REGISTRAR:
-        if not station or station.county != current_user.county:
+        if not station or station.county.lower() != (current_user.county or '').lower():
             raise HTTPException(403, "This submission is not in your county")
         if sub.status != SubmissionStatus.SUB_COUNTY_APPROVED:
             raise HTTPException(400, "This submission is not awaiting county review")
         approve_fn = crud_sub.county_approve
 
     elif role == UserRole.REGIONAL_REGISTRAR:
-        if not station or station.region != current_user.region:
+        if not station or station.region.lower() != (current_user.region or '').lower():
             raise HTTPException(403, "This submission is not in your region")
         if sub.status != SubmissionStatus.COUNTY_APPROVED:
             raise HTTPException(400, "This submission is not awaiting regional review")

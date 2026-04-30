@@ -133,9 +133,9 @@ export default function UsersPage() {
               <select className="input" {...register('role')}>
                 <optgroup label="Field">
                   <option value="clerk">Clerk</option>
-                  <option value="sub_county_registrar">Sub-County Registrar</option>
-                  <option value="county_registrar">County Registrar</option>
-                  <option value="regional_registrar">Regional Registrar</option>
+                  <option value="sub_county_registrar">Deputy County Registrar of Persons</option>
+                  <option value="county_registrar">County Registrar of Persons</option>
+                  <option value="regional_registrar">Regional Registrar of Persons</option>
                 </optgroup>
                 <optgroup label="Headquarters">
                   <option value="hq_clerk">HQ Clerk</option>
