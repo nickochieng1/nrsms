@@ -235,6 +235,9 @@ class SubmissionOut(SubmissionBase):
     photo3a_balance_cf: int
     # Meta
     submitted_by_name: Optional[str] = None
+    station_name: Optional[str] = None
+    station_county: Optional[str] = None
+    station_region: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     submitted_at: Optional[datetime] = None

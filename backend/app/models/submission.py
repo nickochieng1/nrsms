@@ -217,3 +217,15 @@ class Submission(Base):
     @property
     def submitted_by_name(self) -> Optional[str]:
         return self.submitted_by_user.full_name if self.submitted_by_user else None
+
+    @property
+    def station_name(self) -> Optional[str]:
+        return self.station.name if self.station else None
+
+    @property
+    def station_county(self) -> Optional[str]:
+        return self.station.county if self.station else None
+
+    @property
+    def station_region(self) -> Optional[str]:
+        return self.station.region if self.station else None

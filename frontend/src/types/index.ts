@@ -84,6 +84,9 @@ export interface Submission {
   station_id: number
   submitted_by: number
   submitted_by_name: string | null
+  station_name: string | null
+  station_county: string | null
+  station_region: string | null
   reviewed_by: number | null
   period_month: number
   period_year: number

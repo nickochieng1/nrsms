@@ -11,7 +11,8 @@ const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function SubmissionsPage() {
-  const { canApprove, myPendingStatus } = useAuth()
+  const { canApprove, myPendingStatus, isClerk } = useAuth()
+  const showStation = !isClerk  // county/regional/HQ see the station column
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | ''>((searchParams.get('status') as SubmissionStatus) || '')
@@ -31,6 +32,8 @@ export default function SubmissionsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
   })
 
+  const [reviewError, setReviewError] = useState<string | null>(null)
+
   const reviewMutation = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
       reviewSubmission(id, action, reason),
@@ -39,6 +42,10 @@ export default function SubmissionsPage() {
       setRejectModal(null)
       setRejectReason('')
       setReviewModal(null)
+      setReviewError(null)
+    },
+    onError: (err: any) => {
+      setReviewError(err.response?.data?.detail ?? 'Action failed')
     },
   })
 
@@ -93,6 +100,7 @@ export default function SubmissionsPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Period</th>
+                {showStation && <th className="text-left px-4 py-3 font-medium text-gray-600">Station</th>}
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Submitted By</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-600">Applications</th>
                 <th className="text-right px-4 py-3 font-medium text-green-600">IDs Received</th>
@@ -106,7 +114,7 @@ export default function SubmissionsPage() {
             <tbody className="divide-y divide-gray-100">
               {submissions?.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-10 text-gray-400">No submissions found.</td>
+                  <td colSpan={showStation ? 10 : 9} className="text-center py-10 text-gray-400">No submissions found.</td>
                 </tr>
               )}
               {submissions?.map((sub) => (
@@ -123,6 +131,12 @@ export default function SubmissionsPage() {
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
                       )}
                     </td>
+                    {showStation && (
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        <div className="font-medium">{sub.station_name ?? `#${sub.station_id}`}</div>
+                        {sub.station_county && <div className="text-gray-400">{sub.station_county}</div>}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {sub.submitted_by_name ?? `User #${sub.submitted_by}`}
                     </td>
@@ -174,7 +188,7 @@ export default function SubmissionsPage() {
                   {/* Expandable detail (non-submitted rows or non-reviewers) */}
                   {expanded === sub.id && (
                     <tr key={`${sub.id}-detail`} className="bg-slate-50">
-                      <td colSpan={8} className="px-6 py-5">
+                      <td colSpan={showStation ? 9 : 8} className="px-6 py-5">
                         {/* Modules 1–3 */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                           {PREFIXES.map((px) => (
@@ -325,6 +339,9 @@ export default function SubmissionsPage() {
               <div>
                 <h3 className="font-semibold text-gray-900 text-lg">
                   Review Submission #{reviewModal.id}
+                  {reviewModal.station_name && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">— {reviewModal.station_name}</span>
+                  )}
                 </h3>
                 <p className="text-sm text-gray-500 mt-0.5">
                   {MONTH_SHORT[reviewModal.period_month - 1]} {reviewModal.period_year}
@@ -377,6 +394,8 @@ export default function SubmissionsPage() {
                 </div>
               </>
             ) : (
+              <>
+                {reviewError && <p className="text-xs text-red-600 mb-3">{reviewError}</p>}
               <div className="flex gap-3">
                 <button
                   onClick={() => reviewMutation.mutate({ id: reviewModal.id, action: 'approve' })}
@@ -386,12 +405,13 @@ export default function SubmissionsPage() {
                   {reviewMutation.isPending ? 'Approving…' : 'Approve'}
                 </button>
                 <button
-                  onClick={() => { setRejectModal({ id: reviewModal.id }); setRejectReason('') }}
+                  onClick={() => { setRejectModal({ id: reviewModal.id }); setRejectReason(''); setReviewError(null) }}
                   className="btn-danger flex-1 py-2.5 text-base"
                 >
                   Reject
                 </button>
               </div>
+              </>
             )}
           </div>
         </div>

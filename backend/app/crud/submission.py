@@ -9,13 +9,13 @@ from app.services.computation import NRB_CATS, compute_submission_totals
 
 PREFIXES = ("app", "ids", "rej")
 
-_LOAD = joinedload(Submission.submitted_by_user)
+_LOAD = [joinedload(Submission.submitted_by_user), joinedload(Submission.station)]
 
 
 def get(db: Session, submission_id: int) -> Optional[Submission]:
     return (
         db.query(Submission)
-        .options(_LOAD)
+        .options(*_LOAD)
         .filter(Submission.id == submission_id)
         .first()
     )
@@ -31,7 +31,7 @@ def get_all(
     skip: int = 0,
     limit: int = 100,
 ) -> List[Submission]:
-    q = db.query(Submission).options(_LOAD)
+    q = db.query(Submission).options(*_LOAD)
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
     elif station_ids is not None:
