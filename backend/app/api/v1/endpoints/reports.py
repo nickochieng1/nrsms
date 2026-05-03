@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
@@ -18,7 +18,6 @@ from app.services.export import (
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-# Submissions included in all reports — anything approved at any stage
 REPORTABLE = (
     SubmissionStatus.SUB_COUNTY_APPROVED,
     SubmissionStatus.COUNTY_APPROVED,
@@ -30,9 +29,17 @@ MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-PREFIXES = ("app", "ids", "rej")
-COL_CATS   = ("npr", "others", "rejected")
+PREFIXES  = ("app", "ids", "rej")
+COL_CATS  = ("npr", "others", "rejected")
 UNCOL_CATS = ("npr", "others", "lost")
+
+QUARTER_MONTHS = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}
+
+
+def _quarter_months(quarter: Optional[int]) -> List[int]:
+    if quarter and quarter in QUARTER_MONTHS:
+        return QUARTER_MONTHS[quarter]
+    return list(range(1, 13))
 
 
 def _zero_month() -> dict:
@@ -68,6 +75,7 @@ def _zero_month() -> dict:
 @router.get("/summary")
 def summary_report(
     year: int = Query(...),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     county: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
@@ -82,24 +90,31 @@ def summary_report(
     elif current_user.role == UserRole.REGIONAL_REGISTRAR:
         region = current_user.region
 
+    months = _quarter_months(quarter)
+
     q = db.query(Submission).filter(
         Submission.period_year == year,
+        Submission.period_month.in_(months),
         Submission.status.in_(REPORTABLE),
     )
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
     elif county:
-        station_ids = [s.id for s in db.query(Station).filter(Station.county == county).all()]
+        from sqlalchemy import func
+        station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.county) == county.lower()).all()]
         q = q.filter(Submission.station_id.in_(station_ids))
     elif region:
-        station_ids = [s.id for s in db.query(Station).filter(Station.region == region).all()]
+        from sqlalchemy import func
+        station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.region) == region.lower()).all()]
         q = q.filter(Submission.station_id.in_(station_ids))
 
     rows = q.all()
-    monthly = {m: _zero_month() for m in range(1, 13)}
+    monthly = {m: _zero_month() for m in months}
 
     for row in rows:
         m = row.period_month
+        if m not in monthly:
+            continue
         for px in PREFIXES:
             for cat in NRB_CATS:
                 for g in ("male", "female", "total"):
@@ -125,7 +140,6 @@ def summary_report(
                 k = f"{reg}_{fld}"
                 monthly[m][k] += getattr(row, k, 0)
 
-    # Annual totals
     totals = _zero_month()
     for md in monthly.values():
         for key in totals:
@@ -133,44 +147,51 @@ def summary_report(
 
     return {
         "year": year,
-        "monthly": [{"month": m, "month_name": MONTH_SHORT[m - 1], **monthly[m]} for m in range(1, 13)],
+        "quarter": quarter,
+        "monthly": [{"month": m, "month_name": MONTH_SHORT[m - 1], **monthly[m]} for m in months],
         "totals": totals,
     }
 
 
 def _get_station_lookup(db: Session) -> dict:
-    """Returns {station_id: Station object}."""
     return {s.id: s for s in db.query(Station).all()}
 
 
-def _query_submissions(
-    db: Session, year: int, month: int | None, station_id: int | None
-):
+def _query_submissions(db, year: int, month: int | None, station_id: int | None, quarter: int | None = None):
+    months = _quarter_months(quarter) if quarter else None
     q = (db.query(Submission)
          .filter(Submission.period_year == year,
                  Submission.status.in_(REPORTABLE)))
     if month:
         q = q.filter(Submission.period_month == month)
+    elif months:
+        q = q.filter(Submission.period_month.in_(months))
     if station_id:
         q = q.filter(Submission.station_id == station_id)
     return q.all()
+
+
+def _export_role_deps():
+    return require_role(
+        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
+        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
+    )
 
 
 @router.get("/excel")
 def excel_report(
     year: int = Query(...),
     month: Optional[int] = Query(None),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(
-        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
-        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
-    )),
+    _: User = Depends(_export_role_deps()),
 ):
-    rows   = _query_submissions(db, year, month, station_id)
+    rows   = _query_submissions(db, year, month, station_id, quarter)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
-    fname  = f"nrb_report_{year}" + (f"_{month:02d}" if month else "") + ".xlsx"
+    suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
+    fname  = f"nrb_report_{year}{suffix}.xlsx"
     xlsx   = build_excel_report(f"NRB Statistics Report — {year}", year, month, data)
     return Response(
         content=xlsx,
@@ -183,17 +204,16 @@ def excel_report(
 def pdf_report(
     year: int = Query(...),
     month: Optional[int] = Query(None),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(
-        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
-        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
-    )),
+    _: User = Depends(_export_role_deps()),
 ):
-    rows   = _query_submissions(db, year, month, station_id)
+    rows   = _query_submissions(db, year, month, station_id, quarter)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
-    fname  = f"nrb_report_{year}" + (f"_{month:02d}" if month else "") + ".pdf"
+    suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
+    fname  = f"nrb_report_{year}{suffix}.pdf"
     pdf    = build_pdf_report(year, month, data)
     return Response(
         content=pdf,
@@ -206,17 +226,16 @@ def pdf_report(
 def word_report(
     year: int = Query(...),
     month: Optional[int] = Query(None),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(
-        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
-        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
-    )),
+    _: User = Depends(_export_role_deps()),
 ):
-    rows   = _query_submissions(db, year, month, station_id)
+    rows   = _query_submissions(db, year, month, station_id, quarter)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
-    fname  = f"nrb_report_{year}" + (f"_{month:02d}" if month else "") + ".docx"
+    suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
+    fname  = f"nrb_report_{year}{suffix}.docx"
     docx_bytes = build_word_report(year, month, data)
     return Response(
         content=docx_bytes,
@@ -229,17 +248,16 @@ def word_report(
 def csv_report(
     year: int = Query(...),
     month: Optional[int] = Query(None),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(
-        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
-        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
-    )),
+    _: User = Depends(_export_role_deps()),
 ):
-    rows   = _query_submissions(db, year, month, station_id)
+    rows   = _query_submissions(db, year, month, station_id, quarter)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
-    fname  = f"nrb_report_{year}" + (f"_{month:02d}" if month else "") + ".csv"
+    suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
+    fname  = f"nrb_report_{year}{suffix}.csv"
     csv_bytes = build_csv_report(year, month, data)
     return Response(
         content=csv_bytes,

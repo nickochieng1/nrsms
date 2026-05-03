@@ -91,7 +91,9 @@ export default function StationsPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Stations</h1>
-          <p className="text-gray-500 mt-1">Manage registration stations</p>
+          <p className="text-gray-500 mt-1">
+            {stations ? `${stations.length} stations across Kenya` : 'Manage registration stations'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -260,8 +262,8 @@ export default function StationsPage() {
                   <div key={region} className="card p-0 overflow-hidden">
                     {/* Region header */}
                     <div className="px-5 py-3 bg-gray-800 flex items-center justify-between">
-                      <h2 className="text-sm font-bold text-white uppercase tracking-wide">{region} Region</h2>
-                      <span className="text-xs text-gray-400">{regionTotal} station{regionTotal !== 1 ? 's' : ''}</span>
+                      <h2 className="text-sm font-bold text-white uppercase tracking-wide">{region}</h2>
+                      <span className="text-xs text-gray-400">{sortedCounties.length} {sortedCounties.length === 1 ? 'county' : 'counties'} · {regionTotal} station{regionTotal !== 1 ? 's' : ''}</span>
                     </div>
 
                     {sortedCounties.map((county, ci) => {

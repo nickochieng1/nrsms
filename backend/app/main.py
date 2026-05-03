@@ -87,12 +87,13 @@ def _seed_stations():
 
     import openpyxl
     wb = openpyxl.load_workbook(xlsx_path, read_only=True)
-    ws = wb.active
+    # Use the applications sheet which has the full station hierarchy
+    ws = wb["APPLICATIONS SENT"] if "APPLICATIONS SENT" in wb.sheetnames else wb.active
     region = county = ""
     skip_fragments = (
-        "TOTAL", "GRAND", "LIST OF", "JANUARY", "FEBRUARY", "MARCH",
-        "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPT", "OCTOBER",
-        "NOVEMBER", "DECEMBER", "NPR", "REPLACEMENTS",
+        "TOTAL", "GRAND", "LIST OF", "APPLICATION", "JANUARY", "FEBRUARY",
+        "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPT",
+        "OCTOBER", "NOVEMBER", "DECEMBER", "NPR", "REPLACEMENTS",
     )
     stations_data = []
     for row in ws.iter_rows(values_only=True):
@@ -100,7 +101,7 @@ def _seed_stations():
         if not isinstance(val, str):
             continue
         val = val.strip().upper()
-        if not val:
+        if not val or val.startswith("="):
             continue
         if "REGION" in val and "COUNTY" not in val:
             region = val.replace(" TOTALS", "").replace(" TOTAL", "").strip()
@@ -108,7 +109,7 @@ def _seed_stations():
             county = val.replace(" COUNTY", "").strip()
         elif any(frag in val for frag in skip_fragments):
             continue
-        else:
+        elif region and county:
             stations_data.append((region.title(), county.title(), val.title()))
 
     with Session(engine) as db:

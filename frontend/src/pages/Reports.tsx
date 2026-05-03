@@ -17,9 +17,17 @@ type DetailTab = ModulePrefix | 'collected' | 'registers'
 
 const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 
+const QUARTER_LABELS: Record<number, string> = {
+  1: 'Q1 (Jan – Mar)',
+  2: 'Q2 (Apr – Jun)',
+  3: 'Q3 (Jul – Sep)',
+  4: 'Q4 (Oct – Dec)',
+}
+
 export default function ReportsPage() {
   const { isDirector } = useAuth()
   const [year, setYear] = useState(new Date().getFullYear())
+  const [quarter, setQuarter] = useState<number | undefined>(undefined)
   const [region, setRegion] = useState<string>('')
   const [county, setCounty] = useState<string>('')
   const [stationId, setStationId] = useState<number | undefined>(undefined)
@@ -40,8 +48,8 @@ export default function ReportsPage() {
   const activeCounty  = stationId ? undefined : (county || undefined)
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, stationId, activeCounty, activeRegion],
-    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion),
+    queryKey: ['report', 'summary', year, quarter, stationId, activeCounty, activeRegion],
+    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter),
   })
 
   function handleRegionChange(r: string) {
@@ -55,11 +63,12 @@ export default function ReportsPage() {
     setStationId(undefined)
   }
 
-  // Label showing current scope
+  // Label showing current scope and period
+  const periodLabel = quarter ? QUARTER_LABELS[quarter] : `Full Year ${year}`
   const scopeLabel = stationId
     ? (stations?.find((s) => s.id === stationId)?.name ?? `Station #${stationId}`)
     : region
-      ? (county ? `${county} County, ${region} Region` : `${region} Region`)
+      ? (county ? `${county} County, ${region}` : region)
       : 'All Regions'
 
   const monthlyBarData = report?.monthly.map((m) => ({
@@ -115,9 +124,10 @@ export default function ReportsPage() {
     } else {
       // Excel and CSV: download immediately (full year or with month filter)
       const urlFn = fmt === 'csv' ? getCsvReportUrl : getExcelReportUrl
-      const url   = urlFn(year, undefined, stationId, activeCounty, activeRegion)
+      const url   = urlFn(year, undefined, stationId, activeCounty, activeRegion, quarter)
+      const suffix = quarter ? `_Q${quarter}` : '_annual'
       const ext   = fmt === 'csv' ? 'csv' : 'xlsx'
-      downloadFile(url, `nrb_report_${year}.${ext}`)
+      downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
     }
   }
 
@@ -174,9 +184,9 @@ export default function ReportsPage() {
                   const m   = pickedMonth ? Number(pickedMonth) : undefined
                   const ext = exportFormat === 'pdf' ? 'pdf' : 'docx'
                   const url = exportFormat === 'pdf'
-                    ? getPdfReportUrl(year, m, stationId, activeCounty, activeRegion)
-                    : getWordReportUrl(year, m, stationId, activeCounty, activeRegion)
-                  const suffix = m ? `_${String(m).padStart(2, '0')}` : ''
+                    ? getPdfReportUrl(year, m, stationId, activeCounty, activeRegion, quarter)
+                    : getWordReportUrl(year, m, stationId, activeCounty, activeRegion, quarter)
+                  const suffix = m ? `_${String(m).padStart(2, '0')}` : (quarter ? `_Q${quarter}` : '_annual')
                   downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
                   setExportFormat(null)
                 }}
@@ -191,7 +201,7 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
-          <p className="text-gray-500 mt-1">NRB ID Statistics — {year} · <span className="font-medium text-primary-700">{scopeLabel}</span></p>
+          <p className="text-gray-500 mt-1">NRB ID Statistics — {periodLabel} · <span className="font-medium text-primary-700">{scopeLabel}</span></p>
         </div>
         {/* Export dropdown */}
         <div className="flex items-center gap-2">
@@ -221,6 +231,22 @@ export default function ReportsPage() {
             <label className="label">Year</label>
             <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {/* Quarter */}
+          <div>
+            <label className="label">Period</label>
+            <select
+              className="input w-44"
+              value={quarter ?? ''}
+              onChange={(e) => setQuarter(e.target.value ? Number(e.target.value) : undefined)}
+            >
+              <option value="">Full Year (Annual)</option>
+              <option value="1">Q1 — Jan, Feb, Mar</option>
+              <option value="2">Q2 — Apr, May, Jun</option>
+              <option value="3">Q3 — Jul, Aug, Sep</option>
+              <option value="4">Q4 — Oct, Nov, Dec</option>
             </select>
           </div>
 
