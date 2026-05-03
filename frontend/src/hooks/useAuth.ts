@@ -35,7 +35,7 @@ export function useAuth() {
   const isField           = role != null && FIELD_ROLES.includes(role)
   const isClerk           = role === 'clerk'
   const canApprove        = role != null && CAN_APPROVE.includes(role)
-  const canViewReports    = role != null && !['clerk', 'sub_county_registrar'].includes(role)
+  const canViewReports    = role != null && role !== 'clerk'
   const canManageUsers    = isAdmin || isDirector || role === 'hq_officer'
   const myPendingStatus   = role ? PENDING_STATUS[role] : undefined
 

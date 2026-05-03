@@ -7,7 +7,7 @@ import { getSummaryReport } from '@/api/reports'
 import { getStations } from '@/api/stations'
 import { STATUS_COLORS, STATUS_LABELS } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, MODULE_LABELS, MODULE_COLORS } from '@/types'
-import type { ModulePrefix } from '@/types'
+import type { ModulePrefix, MonthlyData } from '@/types'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -23,6 +23,24 @@ const MODULE_BG: Record<ModulePrefix, BgStyle> = {
 
 const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+const QUARTERS = [
+  { q: 1, label: 'Q1', sub: 'Jan – Mar', months: [1, 2, 3],   color: 'text-blue-700',   bg: 'bg-blue-50',   border: 'border-blue-200'   },
+  { q: 2, label: 'Q2', sub: 'Apr – Jun', months: [4, 5, 6],   color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200'  },
+  { q: 3, label: 'Q3', sub: 'Jul – Sep', months: [7, 8, 9],   color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+  { q: 4, label: 'Q4', sub: 'Oct – Dec', months: [10, 11, 12], color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
+]
+
+function quarterTotals(monthly: MonthlyData[], months: number[]) {
+  const rows = monthly.filter(m => months.includes(m.month as number))
+  const sum = (k: string) => rows.reduce((s, m) => s + ((m[k] as number) ?? 0), 0)
+  return {
+    app:       sum('app_grand_total'),
+    ids:       sum('ids_grand_total'),
+    rej:       sum('rej_grand_total'),
+    collected: sum('collected_total'),
+  }
+}
 
 const CUR_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => CUR_YEAR - i)
@@ -43,10 +61,10 @@ export default function DashboardPage() {
   })
 
   const stationName = scopeStationId
-    ? (stations?.find((s) => s.id === user?.station_id)?.name ?? `Station #${user?.station_id}`)
+    ? (stations?.find((s) => s.id === scopeStationId)?.name ?? `Station #${scopeStationId}`)
     : null
 
-  const scopeLabel = scopeCounty ?? scopeRegion ?? stationName
+  const scopeLabel = stationName ?? scopeCounty ?? scopeRegion ?? null
 
   const { data: recentSubmissions } = useQuery({
     queryKey: ['submissions', 'recent'],
@@ -114,7 +132,7 @@ export default function DashboardPage() {
 
       {report && (
         <>
-          {/* 3 module summary cards */}
+          {/* Annual module summary cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             {PREFIXES.map((px) => {
               const total  = ((report.totals[`${px}_grand_total`]  ?? 0) as number)
@@ -146,7 +164,7 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* Secondary stat cards */}
+          {/* Collected / Uncollected + registers */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             {[
               { key: 'collected',   label: 'Collected IDs',     color: 'text-emerald-600' },
@@ -177,6 +195,42 @@ export default function DashboardPage() {
                 </p>
               </div>
             ))}
+          </div>
+
+          {/* Quarterly summary */}
+          <div className="card mb-6">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">Quarterly Summary — {year}</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {QUARTERS.map(({ q, label, sub, months, color, bg, border }) => {
+                const qt = quarterTotals(report.monthly, months)
+                return (
+                  <div key={q} className={`rounded-xl border p-4 ${bg} ${border}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-sm font-bold ${color}`}>{label}</span>
+                      <span className="text-xs text-gray-400">{sub}</span>
+                    </div>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Applications</span>
+                        <span className="font-semibold text-blue-700">{qt.app.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">IDs Received</span>
+                        <span className="font-semibold text-green-700">{qt.ids.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Rejections</span>
+                        <span className="font-semibold text-red-600">{qt.rej.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between pt-1.5 border-t border-black/5">
+                        <span className="text-gray-500">Collected</span>
+                        <span className="font-semibold text-emerald-700">{qt.collected.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Monthly bar chart */}

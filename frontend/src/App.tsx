@@ -14,6 +14,7 @@ import UsersPage from '@/pages/Users'
 import type { UserRole } from '@/types'
 const REPORT_ROLES: UserRole[] = ['county_registrar', 'regional_registrar', 'hq_clerk', 'hq_officer', 'director', 'admin']
 const HQ_MANAGER: UserRole[]   = ['hq_officer', 'director', 'admin']
+const ADMIN_ONLY: UserRole[]   = ['admin']
 
 export default function App() {
   return (
@@ -33,9 +34,12 @@ export default function App() {
               <Route path="/reports" element={<ReportsPage />} />
             </Route>
 
+            <Route element={<RequireAuth allowedRoles={ADMIN_ONLY} />}>
+              <Route path="/audit" element={<AuditLogPage />} />
+            </Route>
+
             <Route element={<RequireAuth allowedRoles={HQ_MANAGER} />}>
-              <Route path="/audit"    element={<AuditLogPage />} />
-              <Route path="/users"    element={<UsersPage />} />
+              <Route path="/users" element={<UsersPage />} />
             </Route>
 
             <Route element={<RequireAuth allowedRoles={['director', 'admin']} />}>
