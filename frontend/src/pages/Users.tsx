@@ -34,6 +34,12 @@ export default function UsersPage() {
   const [resetModal, setResetModal] = useState<{ id: number; name: string } | null>(null)
   const [resetPassword, setResetPassword] = useState('')
   const [resetError, setResetError] = useState<string | null>(null)
+  const [editScopeModal, setEditScopeModal] = useState<{
+    id: number; name: string; role: UserRole
+    station_id: number | null; county: string | null; region: string | null
+  } | null>(null)
+  const [editScopeValue, setEditScopeValue] = useState<{ station_id?: number | null; county?: string | null; region?: string | null }>({})
+  const [editScopeError, setEditScopeError] = useState<string | null>(null)
 
   const { data: users, isLoading } = useQuery({ queryKey: ['users'], queryFn: getUsers })
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
@@ -84,6 +90,19 @@ export default function UsersPage() {
     },
     onError: (err: any) => {
       setResetError(err.response?.data?.detail ?? 'Failed to reset password')
+    },
+  })
+
+  const editScopeMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: object }) => updateUser(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      setEditScopeModal(null)
+      setEditScopeValue({})
+      setEditScopeError(null)
+    },
+    onError: (err: any) => {
+      setEditScopeError(err.response?.data?.detail ?? 'Failed to update scope')
     },
   })
 
@@ -215,7 +234,11 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-gray-500">
                     {u.county   ? u.county   :
                      u.region   ? u.region   :
-                     u.station_id ? stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}` : '—'}
+                     u.station_id ? stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}` : (
+                      NEEDS_COUNTY.has(u.role as UserRole) || NEEDS_REGION.has(u.role as UserRole) || NEEDS_STATION.has(u.role as UserRole)
+                        ? <span className="text-amber-600 font-medium">⚠ Not set</span>
+                        : <span className="text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -231,6 +254,18 @@ export default function UsersPage() {
                       >
                         {u.is_active ? 'Deactivate' : 'Activate'}
                       </button>
+                      {isAdmin && (NEEDS_STATION.has(u.role as UserRole) || NEEDS_COUNTY.has(u.role as UserRole) || NEEDS_REGION.has(u.role as UserRole)) && (
+                        <button
+                          onClick={() => {
+                            setEditScopeModal({ id: u.id, name: u.full_name, role: u.role as UserRole, station_id: u.station_id ?? null, county: u.county ?? null, region: u.region ?? null })
+                            setEditScopeValue({ station_id: u.station_id ?? null, county: u.county ?? null, region: u.region ?? null })
+                            setEditScopeError(null)
+                          }}
+                          className="text-xs text-purple-600 hover:text-purple-800"
+                        >
+                          Edit Scope
+                        </button>
+                      )}
                       {isAdmin && (
                         <button
                           onClick={() => { setResetModal({ id: u.id, name: u.full_name }); setResetPassword(''); setResetError(null) }}
@@ -307,6 +342,67 @@ export default function UsersPage() {
               <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editScopeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="card w-full max-w-sm">
+            <h3 className="font-semibold text-gray-900 mb-1">Edit Geographic Scope</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Updating assignment for <span className="font-medium text-gray-700">{editScopeModal.name}</span>.
+            </p>
+            {NEEDS_STATION.has(editScopeModal.role) && (
+              <div className="mb-3">
+                <label className="label">Assigned Station</label>
+                <select
+                  className="input"
+                  value={editScopeValue.station_id ?? ''}
+                  onChange={(e) => setEditScopeValue(v => ({ ...v, station_id: e.target.value ? Number(e.target.value) : null }))}
+                >
+                  <option value="">Select station…</option>
+                  {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county}</option>)}
+                </select>
+              </div>
+            )}
+            {NEEDS_COUNTY.has(editScopeModal.role) && (
+              <div className="mb-3">
+                <label className="label">Assigned County</label>
+                <select
+                  className="input"
+                  value={editScopeValue.county ?? ''}
+                  onChange={(e) => setEditScopeValue(v => ({ ...v, county: e.target.value || null }))}
+                >
+                  <option value="">Select county…</option>
+                  {counties.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+            {NEEDS_REGION.has(editScopeModal.role) && (
+              <div className="mb-3">
+                <label className="label">Assigned Region</label>
+                <select
+                  className="input"
+                  value={editScopeValue.region ?? ''}
+                  onChange={(e) => setEditScopeValue(v => ({ ...v, region: e.target.value || null }))}
+                >
+                  <option value="">Select region…</option>
+                  {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            )}
+            {editScopeError && <p className="text-xs text-red-600 mb-3">{editScopeError}</p>}
+            <div className="flex gap-3">
+              <button
+                onClick={() => editScopeMutation.mutate({ id: editScopeModal.id, patch: editScopeValue })}
+                disabled={editScopeMutation.isPending}
+                className="btn-primary flex-1"
+              >
+                {editScopeMutation.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditScopeModal(null)} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>
         </div>
