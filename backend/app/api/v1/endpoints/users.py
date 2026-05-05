@@ -30,7 +30,7 @@ def create_user(
     body: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
 ):
     if crud_user.get_by_email(db, body.email):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -65,7 +65,7 @@ def update_user(
     body: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
 ):
     user = crud_user.get(db, user_id)
     if not user:

@@ -52,12 +52,21 @@ export default function UsersPage() {
   const role = watch('role') as UserRole
 
   const createMutation = useMutation({
-    mutationFn: (v: FormValues) => createUser({
-      ...v,
-      station_id: NEEDS_STATION.has(v.role as UserRole) ? (v.station_id || null) : null,
-      county:     NEEDS_COUNTY.has(v.role as UserRole)  ? (v.county || null) : null,
-      region:     NEEDS_REGION.has(v.role as UserRole)  ? (v.region || null) : null,
-    }),
+    mutationFn: (v: FormValues) => {
+      const stationObj = NEEDS_STATION.has(v.role as UserRole) && v.station_id
+        ? stations?.find(s => s.id === Number(v.station_id)) ?? null
+        : null
+      return createUser({
+        ...v,
+        station_id: stationObj ? stationObj.id : null,
+        county:     NEEDS_COUNTY.has(v.role as UserRole)
+          ? (v.county || null)
+          : stationObj ? stationObj.county : null,
+        region:     NEEDS_REGION.has(v.role as UserRole)
+          ? (v.region || null)
+          : stationObj ? stationObj.region : null,
+      })
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       reset()
@@ -232,13 +241,24 @@ export default function UsersPage() {
                     <span className="badge bg-blue-50 text-blue-700">{ROLE_LABELS[u.role]}</span>
                   </td>
                   <td className="px-4 py-3 text-gray-500">
-                    {u.county   ? u.county   :
-                     u.region   ? u.region   :
-                     u.station_id ? stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}` : (
-                      NEEDS_COUNTY.has(u.role as UserRole) || NEEDS_REGION.has(u.role as UserRole) || NEEDS_STATION.has(u.role as UserRole)
-                        ? <span className="text-amber-600 font-medium">⚠ Not set</span>
-                        : <span className="text-gray-300">—</span>
-                    )}
+                    {NEEDS_STATION.has(u.role as UserRole) ? (
+                      u.station_id ? (
+                        <span>
+                          <span className="text-gray-700 font-medium">
+                            {stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}`}
+                          </span>
+                          {u.county && <span className="text-xs text-gray-400 ml-1">({u.county})</span>}
+                        </span>
+                      ) : <span className="text-amber-600 font-medium">⚠ No station set</span>
+                    ) : NEEDS_COUNTY.has(u.role as UserRole) ? (
+                      u.county
+                        ? u.county
+                        : <span className="text-amber-600 font-medium">⚠ No county set</span>
+                    ) : NEEDS_REGION.has(u.role as UserRole) ? (
+                      u.region
+                        ? u.region
+                        : <span className="text-amber-600 font-medium">⚠ No region set</span>
+                    ) : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -360,11 +380,21 @@ export default function UsersPage() {
                 <select
                   className="input"
                   value={editScopeValue.station_id ?? ''}
-                  onChange={(e) => setEditScopeValue(v => ({ ...v, station_id: e.target.value ? Number(e.target.value) : null }))}
+                  onChange={(e) => {
+                    const sid = e.target.value ? Number(e.target.value) : null
+                    const st = sid ? stations?.find(s => s.id === sid) : null
+                    setEditScopeValue({ station_id: sid, county: st?.county ?? null, region: st?.region ?? null })
+                  }}
                 >
                   <option value="">Select station…</option>
-                  {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county}</option>)}
+                  {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county} ({s.region})</option>)}
                 </select>
+                {editScopeValue.station_id && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    County: <span className="font-medium">{editScopeValue.county ?? '—'}</span>
+                    {' · '}Region: <span className="font-medium">{editScopeValue.region ?? '—'}</span>
+                  </p>
+                )}
               </div>
             )}
             {NEEDS_COUNTY.has(editScopeModal.role) && (

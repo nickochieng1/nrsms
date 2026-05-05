@@ -244,10 +244,10 @@ def _assert_can_read(user: User, sub: Submission, db: Session) -> None:
             raise HTTPException(403, "Access denied")
     elif role == UserRole.COUNTY_REGISTRAR:
         station = db.get(Station, sub.station_id)
-        if not station or station.county != user.county:
+        if not station or (station.county or '').lower() != (user.county or '').lower():
             raise HTTPException(403, "Access denied")
     elif role == UserRole.REGIONAL_REGISTRAR:
         station = db.get(Station, sub.station_id)
-        if not station or station.region != user.region:
+        if not station or (station.region or '').lower() != (user.region or '').lower():
             raise HTTPException(403, "Access denied")
     # HQ roles can read anything in HQ_VISIBLE; admin can read all
