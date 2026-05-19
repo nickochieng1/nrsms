@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { to: '/submissions',     label: 'Submissions',     roles: ALL_ROLES,                                          end: true  },
   { to: '/reports',         label: 'Reports',         roles: ['county_registrar','regional_registrar',...HQ],    end: false },
   { to: '/audit',           label: 'Audit Log',       roles: ['admin'],                                          end: false },
-  { to: '/stations',        label: 'Stations',        roles: ['director','admin'],                               end: false },
+  { to: '/stations',        label: 'Stations',        roles: ['director','admin','regional_registrar','county_registrar'], end: false },
   { to: '/users',           label: 'Users',           roles: MANAGERS,                                           end: false },
 ]
 

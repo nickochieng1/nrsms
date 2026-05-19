@@ -42,7 +42,7 @@ export default function App() {
               <Route path="/users" element={<UsersPage />} />
             </Route>
 
-            <Route element={<RequireAuth allowedRoles={['director', 'admin']} />}>
+            <Route element={<RequireAuth allowedRoles={['director', 'admin', 'regional_registrar', 'county_registrar']} />}>
               <Route path="/stations" element={<StationsPage />} />
             </Route>
           </Route>

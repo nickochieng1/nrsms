@@ -30,12 +30,26 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 export default function StationsPage() {
   const qc = useQueryClient()
-  const { isAdmin, isDirector } = useAuth()
+  const { isAdmin, isDirector, user } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [editStation, setEditStation] = useState<Station | null>(null)
   const [search, setSearch] = useState('')
 
-  const { data: stations, isLoading } = useQuery({ queryKey: ['stations'], queryFn: getStations })
+  // Derived scope from logged-in user
+  const userRegion  = user?.region  ?? null
+  const userCounty  = user?.county  ?? null
+  const isRegional  = user?.role === 'regional_registrar'
+  const isCountyReg = user?.role === 'county_registrar'
+  const canManage   = isAdmin || isDirector
+
+  const { data: allStations, isLoading } = useQuery({ queryKey: ['stations'], queryFn: getStations })
+
+  // Apply geographic scope before rendering
+  const stations = (allStations ?? []).filter((s) => {
+    if (isRegional && userRegion) return s.region.toLowerCase() === userRegion.toLowerCase()
+    if (isCountyReg && userCounty) return s.county.toLowerCase() === userCounty.toLowerCase()
+    return true // director / admin see everything
+  })
 
   // Create form
   const {
@@ -90,9 +104,17 @@ export default function StationsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stations</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isRegional && userRegion ? `${userRegion}` : isCountyReg && userCounty ? `${userCounty} County` : 'Stations'}
+          </h1>
           <p className="text-gray-500 mt-1">
-            {stations ? `${stations.length} stations across Kenya` : 'Manage registration stations'}
+            {isRegional && userRegion
+              ? `Your region — ${stations.length} station${stations.length !== 1 ? 's' : ''}`
+              : isCountyReg && userCounty
+              ? `Your county — ${stations.length} station${stations.length !== 1 ? 's' : ''}`
+              : stations.length > 0
+              ? `${stations.length} stations across Kenya`
+              : 'Manage registration stations'}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -117,7 +139,7 @@ export default function StationsPage() {
               </button>
             )}
           </div>
-          {isAdmin && (
+          {canManage && (
             <button onClick={() => { setShowForm(true); closeEdit() }} className="btn-primary">
               + Add Station
             </button>
@@ -125,8 +147,8 @@ export default function StationsPage() {
         </div>
       </div>
 
-      {/* Create form */}
-      {showForm && (
+      {/* Create form — managers only */}
+      {canManage && showForm && (
         <div className="card mb-6">
           <h2 className="font-semibold text-gray-900 mb-4">New Station</h2>
           <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -158,8 +180,8 @@ export default function StationsPage() {
         </div>
       )}
 
-      {/* Edit modal */}
-      {editStation && (
+      {/* Edit modal — managers only */}
+      {canManage && editStation && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={(e) => { if (e.target === e.currentTarget) closeEdit() }}
@@ -282,7 +304,7 @@ export default function StationsPage() {
                                 <th className="text-left px-5 py-2 font-medium text-gray-500 text-xs w-8">#</th>
                                 <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Station Name</th>
                                 <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Code</th>
-                                {isDirector && (
+                                {canManage && (
                                   <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Actions</th>
                                 )}
                               </tr>
@@ -296,7 +318,7 @@ export default function StationsPage() {
                                   <td className="px-5 py-2.5 text-gray-400 text-xs">{idx + 1}</td>
                                   <td className="px-4 py-2.5 font-medium text-gray-800"><Highlight text={s.name} query={q} /></td>
                                   <td className="px-4 py-2.5 text-gray-500 font-mono text-xs"><Highlight text={s.code} query={q} /></td>
-                                  {isDirector && (
+                                  {canManage && (
                                     <td className="px-4 py-2.5">
                                       <div className="flex items-center gap-3">
                                         <button
