@@ -1,3 +1,15 @@
+# NOTE: nrsms-backend was originally created directly in the Render dashboard
+# (not via this Blueprint), so Render will not auto-provision the database
+# below just from this file being in the repo. The `nrsms-db` service id is
+# declared here for documentation/future-recreation purposes; the actual
+# DATABASE_URL on the live nrsms-backend service must be set by hand once in
+# the dashboard (Settings -> Environment) to the new database's connection
+# string. See the PR/commit message for the one-time manual steps.
+databases:
+  - name: nrsms-db
+    plan: free
+    postgresMajorVersion: "16"
+
 services:
   - type: web
     name: nrsms-backend
@@ -6,7 +18,9 @@ services:
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        value: sqlite:///./nrsms.db
+        fromDatabase:
+          name: nrsms-db
+          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: FIRST_SUPERUSER_EMAIL

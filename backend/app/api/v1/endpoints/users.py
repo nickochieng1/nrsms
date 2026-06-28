@@ -136,10 +136,10 @@ def delete_user(
                   old_value={"email": user.email, "role": user.role}, **meta)
     db.commit()
     with engine.connect() as conn:
-        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        # Null out FK references first so the delete below never hits a
+        # foreign-key violation, on SQLite or Postgres alike.
         conn.execute(text("UPDATE submissions SET reviewed_by=NULL WHERE reviewed_by=:uid"), {"uid": user_id})
         conn.execute(text("UPDATE audit_logs SET user_id=NULL WHERE user_id=:uid"), {"uid": user_id})
         conn.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": user_id})
         conn.commit()
-        conn.execute(text("PRAGMA foreign_keys=ON"))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

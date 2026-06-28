@@ -69,7 +69,15 @@ def _seed_superuser():
 
 
 def _migrate_schema():
-    """Add new columns and remap old role/status values to new ones."""
+    """Add new columns and remap old role/status values to new ones.
+
+    This whole function is SQLite-only patchwork accumulated over the app's
+    history (ALTER TABLE/PRAGMA workarounds for things SQLite can't do
+    directly). A fresh Postgres database gets the current schema straight
+    from the models via create_all() above, so none of this applies there.
+    """
+    if not settings.DATABASE_URL.startswith("sqlite"):
+        return
     from sqlalchemy import text
     with engine.connect() as conn:
         for col in ("county VARCHAR(200)", "region VARCHAR(200)"):
