@@ -16,12 +16,19 @@ const QUARTER_LABELS: Record<number, string> = {
   4: 'Q4 (Oct – Dec)',
 }
 
+const FORMAT_LABELS: Record<'excel' | 'pdf' | 'word', string> = {
+  excel: 'Excel (.xlsx)',
+  pdf: 'PDF (.pdf)',
+  word: 'Word (.docx)',
+}
+
 export default function MashinaniReportsPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [quarter, setQuarter] = useState<number | undefined>(undefined)
   const [month, setMonth] = useState<number | undefined>(undefined)
   const [mashinaniCounty, setMashinaniCounty] = useState('')
   const [mashinaniSubcounty, setMashinaniSubcounty] = useState('')
+  const [exportFormat, setExportFormat] = useState<'excel' | 'pdf' | 'word' | null>(null)
   const YEARS = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i)
 
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
@@ -53,16 +60,42 @@ export default function MashinaniReportsPage() {
 
   const periodLabel = month ? `${MONTH_NAMES[month - 1]} ${year}` : quarter ? QUARTER_LABELS[quarter] : `Full Year ${year}`
 
-  function handleExportSelect(fmt: 'excel' | 'pdf' | 'word') {
-    const urlFn = fmt === 'excel' ? getMobileExcelReportUrl : fmt === 'pdf' ? getMobilePdfReportUrl : getMobileWordReportUrl
-    const ext = fmt === 'excel' ? 'xlsx' : fmt === 'pdf' ? 'pdf' : 'docx'
+  function confirmExportDownload() {
+    if (!exportFormat) return
+    const urlFn = exportFormat === 'excel' ? getMobileExcelReportUrl : exportFormat === 'pdf' ? getMobilePdfReportUrl : getMobileWordReportUrl
+    const ext = exportFormat === 'excel' ? 'xlsx' : exportFormat === 'pdf' ? 'pdf' : 'docx'
     const suffix = month ? `_${String(month).padStart(2, '0')}` : quarter ? `_Q${quarter}` : '_annual'
     const url = urlFn(year, month, quarter, mashinaniCounty || undefined, mashinaniSubcounty || undefined)
     downloadFile(url, `usajili_mashinani_${year}${suffix}.${ext}`)
+    setExportFormat(null)
   }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+      {/* Export confirmation popup — shows the chosen file type before downloading */}
+      {exportFormat && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={(e) => { if (e.target === e.currentTarget) setExportFormat(null) }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-96 mx-4 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="font-bold text-gray-900">Export Report — {FORMAT_LABELS[exportFormat]}</h2>
+              <p className="text-xs text-gray-500 mt-0.5">{periodLabel}</p>
+            </div>
+            <div className="px-6 py-5">
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
+                Usajili Mashinani data for <strong>{mashinaniCounty || 'All Counties'}{mashinaniSubcounty ? `, ${mashinaniSubcounty}` : ''}</strong> — {periodLabel}.
+              </div>
+            </div>
+            <div className="px-6 pb-5 flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => setExportFormat(null)}>Cancel</button>
+              <button className="btn-primary" onClick={confirmExportDownload}>Download</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Usajili Mashinani Report</h1>
@@ -75,7 +108,7 @@ export default function MashinaniReportsPage() {
             defaultValue=""
             onChange={(e) => {
               const fmt = e.target.value as 'excel' | 'pdf' | 'word' | ''
-              if (fmt) handleExportSelect(fmt)
+              if (fmt) setExportFormat(fmt)
               e.target.value = ''
             }}
           >

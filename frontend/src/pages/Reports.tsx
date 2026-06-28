@@ -108,17 +108,22 @@ export default function ReportsPage() {
   const needsMonth = exportFormat === 'pdf' || exportFormat === 'word'
 
   function handleExportSelect(fmt: typeof FORMAT_OPTS[number]['value']) {
-    if (fmt === 'pdf' || fmt === 'word') {
-      setExportFormat(fmt)
-      setPickedMonth(new Date().getMonth() + 1)
-    } else {
-      // Excel and CSV: download immediately, respecting the on-screen month/quarter filter
-      const urlFn = fmt === 'csv' ? getCsvReportUrl : getExcelReportUrl
-      const url   = urlFn(year, month, stationId, activeCounty, activeRegion, quarter)
-      const suffix = month ? `_${String(month).padStart(2, '0')}` : quarter ? `_Q${quarter}` : '_annual'
-      const ext   = fmt === 'csv' ? 'csv' : 'xlsx'
-      downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
-    }
+    setExportFormat(fmt)
+    setPickedMonth(fmt === 'pdf' || fmt === 'word' ? new Date().getMonth() + 1 : '')
+  }
+
+  function confirmExportDownload() {
+    if (!exportFormat) return
+    const m = needsMonth ? (pickedMonth ? Number(pickedMonth) : undefined) : month
+    const ext = exportFormat === 'csv' ? 'csv' : exportFormat === 'excel' ? 'xlsx' : exportFormat === 'pdf' ? 'pdf' : 'docx'
+    const urlFn = exportFormat === 'csv' ? getCsvReportUrl
+      : exportFormat === 'excel' ? getExcelReportUrl
+      : exportFormat === 'pdf' ? getPdfReportUrl
+      : getWordReportUrl
+    const url = urlFn(year, m, stationId, activeCounty, activeRegion, quarter)
+    const suffix = m ? `_${String(m).padStart(2, '0')}` : quarter ? `_Q${quarter}` : '_annual'
+    downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
+    setExportFormat(null)
   }
 
   return (
@@ -132,12 +137,12 @@ export default function ReportsPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-96 mx-4 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200">
               <h2 className="font-bold text-gray-900">
-                Export Report — {exportFormat.toUpperCase()}
+                Export Report — {FORMAT_OPTS.find((o) => o.value === exportFormat)?.label}
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 {needsMonth
                   ? 'Select the month to include in this report'
-                  : `Annual report for ${year}`}
+                  : month ? `${MONTH_NAMES[month - 1]} ${year}` : quarter ? `${QUARTER_LABELS[quarter]} ${year}` : `Annual report for ${year}`}
               </p>
             </div>
             <div className="px-6 py-5 space-y-4">
@@ -161,26 +166,14 @@ export default function ReportsPage() {
               )}
               <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
                 Report covers approved submissions for <strong>{scopeLabel}</strong>
-                {needsMonth && pickedMonth
-                  ? ` for ${MONTH_NAMES[Number(pickedMonth) - 1]} ${year}`
-                  : ` — full year ${year}`}.
+                {needsMonth
+                  ? (pickedMonth ? ` for ${MONTH_NAMES[Number(pickedMonth) - 1]} ${year}` : ` — full year ${year}`)
+                  : (month ? ` for ${MONTH_NAMES[month - 1]} ${year}` : quarter ? ` for ${QUARTER_LABELS[quarter]} ${year}` : ` — full year ${year}`)}.
               </div>
             </div>
             <div className="px-6 pb-5 flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setExportFormat(null)}>Cancel</button>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  const m   = pickedMonth ? Number(pickedMonth) : undefined
-                  const ext = exportFormat === 'pdf' ? 'pdf' : 'docx'
-                  const url = exportFormat === 'pdf'
-                    ? getPdfReportUrl(year, m, stationId, activeCounty, activeRegion, quarter)
-                    : getWordReportUrl(year, m, stationId, activeCounty, activeRegion, quarter)
-                  const suffix = m ? `_${String(m).padStart(2, '0')}` : (quarter ? `_Q${quarter}` : '_annual')
-                  downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
-                  setExportFormat(null)
-                }}
-              >
+              <button className="btn-primary" onClick={confirmExportDownload}>
                 Download
               </button>
             </div>
