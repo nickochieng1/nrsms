@@ -14,16 +14,10 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, enum.Enum):
-    # ── Field staff ───────────────────────────────────────────
-    CLERK               = "clerk"                # sub-county data entry
-    SUB_COUNTY_REGISTRAR = "sub_county_registrar" # approves clerk's data
-    COUNTY_REGISTRAR    = "county_registrar"      # approves sub-county data
-    REGIONAL_REGISTRAR  = "regional_registrar"    # approves county data → HQ
-    # ── Headquarters (Statistics dept) ───────────────────────
-    HQ_CLERK            = "hq_clerk"              # views at HQ
-    HQ_OFFICER          = "hq_officer"            # heads HQ clerks, approves regional data
-    DIRECTOR            = "director"              # Director of Statistics
-    ADMIN               = "admin"                 # system administrator
+    CLERK     = "clerk"       # region-scoped data entry
+    REGISTRAR = "registrar"   # reviews clerk submissions
+    DIRECTOR  = "director"    # views all data/reports, final approval
+    ADMIN     = "admin"       # system administrator — user management only
 
 
 class User(Base):
@@ -38,11 +32,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Geographic scope — which field(s) are set depends on role:
-    #   clerk / sub_county_registrar → station_id
-    #   county_registrar             → county
-    #   regional_registrar           → region
-    #   HQ roles                     → none required
+    # Geographic scope — clerks are assigned a region
     station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id"), nullable=True)
     county: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     region: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

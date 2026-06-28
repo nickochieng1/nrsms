@@ -16,9 +16,13 @@ def list_stations(
     skip: int = 0,
     limit: int = 500,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    return crud_station.get_all(db, skip=skip, limit=limit)
+    stations = crud_station.get_all(db, skip=skip, limit=limit)
+    if current_user.role == UserRole.CLERK and current_user.region:
+        region = current_user.region.lower()
+        stations = [s for s in stations if s.region.lower() == region]
+    return stations
 
 
 @router.post("", response_model=StationOut, status_code=status.HTTP_201_CREATED)
@@ -26,7 +30,7 @@ def create_station(
     body: StationCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     if crud_station.get_by_code(db, body.code):
         raise HTTPException(status_code=400, detail="Station code already exists")
@@ -55,7 +59,7 @@ def update_station(
     body: StationUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     station = crud_station.get(db, station_id)
     if not station:

@@ -30,26 +30,16 @@ function Highlight({ text, query }: { text: string; query: string }) {
 
 export default function StationsPage() {
   const qc = useQueryClient()
-  const { isAdmin, isDirector, user } = useAuth()
+  const { isAdmin } = useAuth()
+  const canManage = isAdmin
+
   const [showForm, setShowForm] = useState(false)
   const [editStation, setEditStation] = useState<Station | null>(null)
   const [search, setSearch] = useState('')
 
-  // Derived scope from logged-in user
-  const userRegion  = user?.region  ?? null
-  const userCounty  = user?.county  ?? null
-  const isRegional  = user?.role === 'regional_registrar'
-  const isCountyReg = user?.role === 'county_registrar'
-  const canManage   = isAdmin || isDirector
-
   const { data: allStations, isLoading } = useQuery({ queryKey: ['stations'], queryFn: getStations })
 
-  // Apply geographic scope before rendering
-  const stations = (allStations ?? []).filter((s) => {
-    if (isRegional && userRegion) return s.region.toLowerCase() === userRegion.toLowerCase()
-    if (isCountyReg && userCounty) return s.county.toLowerCase() === userCounty.toLowerCase()
-    return true // director / admin see everything
-  })
+  const stations = allStations ?? []
 
   // Create form
   const {
@@ -104,15 +94,9 @@ export default function StationsPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isRegional && userRegion ? `${userRegion}` : isCountyReg && userCounty ? `${userCounty} County` : 'Stations'}
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Stations</h1>
           <p className="text-gray-500 mt-1">
-            {isRegional && userRegion
-              ? `Your region — ${stations.length} station${stations.length !== 1 ? 's' : ''}`
-              : isCountyReg && userCounty
-              ? `Your county — ${stations.length} station${stations.length !== 1 ? 's' : ''}`
-              : stations.length > 0
+            {stations.length > 0
               ? `${stations.length} stations across Kenya`
               : 'Manage registration stations'}
           </p>

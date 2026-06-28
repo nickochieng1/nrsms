@@ -9,37 +9,27 @@ import { ROLE_LABELS, formatDate } from '@/utils/format'
 import { useAuth } from '@/hooks/useAuth'
 import type { UserRole } from '@/types'
 
-const NEEDS_STATION  = new Set<UserRole>(['clerk', 'sub_county_registrar'])
-const NEEDS_COUNTY   = new Set<UserRole>(['county_registrar'])
-const NEEDS_REGION   = new Set<UserRole>(['regional_registrar'])
-
 const schema = z.object({
-  full_name:  z.string().min(2),
-  username:   z.string().min(3, 'Username must be at least 3 characters').regex(/^\S+$/, 'No spaces allowed'),
-  email:      z.string().email(),
-  password:   z.string().min(6),
-  role:       z.enum(['clerk', 'sub_county_registrar', 'county_registrar', 'regional_registrar',
-                      'hq_clerk', 'hq_officer', 'director', 'admin']),
-  station_id: z.coerce.number().nullable().optional(),
-  county:     z.string().optional(),
-  region:     z.string().optional(),
+  full_name: z.string().min(2),
+  username:  z.string().min(3, 'Username must be at least 3 characters').regex(/^\S+$/, 'No spaces allowed'),
+  email:     z.string().email(),
+  password:  z.string().min(6),
+  role:      z.enum(['clerk', 'registrar', 'director']),
+  region:    z.string().optional(),
 })
 type FormValues = z.infer<typeof schema>
 
 export default function UsersPage() {
   const qc = useQueryClient()
-  const { isAdmin, user: currentUser } = useAuth()
+  const { user: currentUser, isAdmin } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
   const [resetModal, setResetModal] = useState<{ id: number; name: string } | null>(null)
   const [resetPassword, setResetPassword] = useState('')
   const [resetError, setResetError] = useState<string | null>(null)
-  const [editScopeModal, setEditScopeModal] = useState<{
-    id: number; name: string; role: UserRole
-    station_id: number | null; county: string | null; region: string | null
-  } | null>(null)
-  const [editScopeValue, setEditScopeValue] = useState<{ station_id?: number | null; county?: string | null; region?: string | null }>({})
-  const [editScopeError, setEditScopeError] = useState<string | null>(null)
+  const [editRegionModal, setEditRegionModal] = useState<{ id: number; name: string; region: string | null } | null>(null)
+  const [editRegion, setEditRegion] = useState('')
+  const [editRegionError, setEditRegionError] = useState<string | null>(null)
 
   const { data: users, isLoading } = useQuery({ queryKey: ['users'], queryFn: getUsers })
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
@@ -50,23 +40,15 @@ export default function UsersPage() {
   })
 
   const role = watch('role') as UserRole
+  const regions = [...new Set((stations ?? []).map((s) => s.region))].sort()
 
   const createMutation = useMutation({
-    mutationFn: (v: FormValues) => {
-      const stationObj = NEEDS_STATION.has(v.role as UserRole) && v.station_id
-        ? stations?.find(s => s.id === Number(v.station_id)) ?? null
-        : null
-      return createUser({
-        ...v,
-        station_id: stationObj ? stationObj.id : null,
-        county:     NEEDS_COUNTY.has(v.role as UserRole)
-          ? (v.county || null)
-          : stationObj ? stationObj.county : null,
-        region:     NEEDS_REGION.has(v.role as UserRole)
-          ? (v.region || null)
-          : stationObj ? stationObj.region : null,
-      })
-    },
+    mutationFn: (v: FormValues) => createUser({
+      ...v,
+      region: v.role === 'clerk' ? (v.region || null) : null,
+      station_id: null,
+      county: null,
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       reset()
@@ -102,37 +84,34 @@ export default function UsersPage() {
     },
   })
 
-  const editScopeMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: number; patch: object }) => updateUser(id, patch),
+  const editRegionMutation = useMutation({
+    mutationFn: ({ id, region }: { id: number; region: string }) => updateUser(id, { region }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
-      setEditScopeModal(null)
-      setEditScopeValue({})
-      setEditScopeError(null)
+      setEditRegionModal(null)
+      setEditRegion('')
+      setEditRegionError(null)
     },
     onError: (err: any) => {
-      setEditScopeError(err.response?.data?.detail ?? 'Failed to update scope')
+      setEditRegionError(err.response?.data?.detail ?? 'Failed to update region')
     },
   })
-
-  const needsStation = NEEDS_STATION.has(role)
-  const needsCounty  = NEEDS_COUNTY.has(role)
-  const needsRegion  = NEEDS_REGION.has(role)
-
-  const counties = [...new Set((stations ?? []).map(s => s.county))].sort()
-  const regions  = [...new Set((stations ?? []).map(s => s.region))].sort()
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-gray-500 mt-1">Manage system users and roles</p>
+          <p className="text-gray-500 mt-1">
+            {isAdmin ? 'Create accounts, assign usernames, and issue passwords' : 'Read-only view of system users'}
+          </p>
         </div>
-        <button onClick={() => setShowForm(true)} className="btn-primary">+ Add User</button>
+        {isAdmin && (
+          <button onClick={() => setShowForm(true)} className="btn-primary">+ Add User</button>
+        )}
       </div>
 
-      {showForm && (
+      {isAdmin && showForm && (
         <div className="card mb-6">
           <h2 className="font-semibold text-gray-900 mb-4">New User</h2>
           <form onSubmit={handleSubmit((v) => createMutation.mutate(v))} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -152,46 +131,19 @@ export default function UsersPage() {
               {errors.email && <p className="text-xs text-red-600 mt-1">{errors.email.message}</p>}
             </div>
             <div>
-              <label className="label">Password</label>
+              <label className="label">Initial Password</label>
               <input type="password" className="input" {...register('password')} />
               {errors.password && <p className="text-xs text-red-600 mt-1">{errors.password.message}</p>}
             </div>
             <div>
               <label className="label">Role</label>
               <select className="input" {...register('role')}>
-                <optgroup label="Field">
-                  <option value="clerk">Clerk</option>
-                  <option value="sub_county_registrar">Deputy County Registrar of Persons</option>
-                  <option value="county_registrar">County Registrar of Persons</option>
-                  <option value="regional_registrar">Regional Registrar of Persons</option>
-                </optgroup>
-                <optgroup label="Headquarters">
-                  <option value="hq_clerk">HQ Clerk</option>
-                  <option value="hq_officer">HQ Officer</option>
-                  <option value="director">Director of Statistics</option>
-                  <option value="admin">System Administrator</option>
-                </optgroup>
+                <option value="clerk">Clerk</option>
+                <option value="registrar">Registrar</option>
+                <option value="director">Director of Statistics</option>
               </select>
             </div>
-            {needsStation && (
-              <div>
-                <label className="label">Assigned Station</label>
-                <select className="input" {...register('station_id')}>
-                  <option value="">Select station…</option>
-                  {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county}</option>)}
-                </select>
-              </div>
-            )}
-            {needsCounty && (
-              <div>
-                <label className="label">Assigned County</label>
-                <select className="input" {...register('county')}>
-                  <option value="">Select county…</option>
-                  {counties.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            )}
-            {needsRegion && (
+            {role === 'clerk' && (
               <div>
                 <label className="label">Assigned Region</label>
                 <select className="input" {...register('region')}>
@@ -218,101 +170,85 @@ export default function UsersPage() {
           <div className="p-8 text-center text-gray-400">Loading…</div>
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Username</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Scope</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users?.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">{u.full_name}</td>
-                  <td className="px-4 py-3 font-mono text-gray-700">{u.username ?? <span className="text-gray-400 italic">—</span>}</td>
-                  <td className="px-4 py-3 text-gray-600">{u.email}</td>
-                  <td className="px-4 py-3">
-                    <span className="badge bg-blue-50 text-blue-700">{ROLE_LABELS[u.role]}</span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {NEEDS_STATION.has(u.role as UserRole) ? (
-                      u.station_id ? (
-                        <span>
-                          <span className="text-gray-700 font-medium">
-                            {stations?.find(s => s.id === u.station_id)?.name ?? `#${u.station_id}`}
-                          </span>
-                          {u.county && <span className="text-xs text-gray-400 ml-1">({u.county})</span>}
-                        </span>
-                      ) : <span className="text-amber-600 font-medium">⚠ No station set</span>
-                    ) : NEEDS_COUNTY.has(u.role as UserRole) ? (
-                      u.county
-                        ? u.county
-                        : <span className="text-amber-600 font-medium">⚠ No county set</span>
-                    ) : NEEDS_REGION.has(u.role as UserRole) ? (
-                      u.region
-                        ? u.region
-                        : <span className="text-amber-600 font-medium">⚠ No region set</span>
-                    ) : <span className="text-gray-300">—</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                      {u.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400">{formatDate(u.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <button
-                        onClick={() => toggleActiveMutation.mutate({ id: u.id, is_active: !u.is_active })}
-                        className={`text-xs ${u.is_active ? 'text-amber-600 hover:text-amber-800' : 'text-green-600 hover:text-green-800'}`}
-                      >
-                        {u.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                      {isAdmin && (NEEDS_STATION.has(u.role as UserRole) || NEEDS_COUNTY.has(u.role as UserRole) || NEEDS_REGION.has(u.role as UserRole)) && (
-                        <button
-                          onClick={() => {
-                            setEditScopeModal({ id: u.id, name: u.full_name, role: u.role as UserRole, station_id: u.station_id ?? null, county: u.county ?? null, region: u.region ?? null })
-                            setEditScopeValue({ station_id: u.station_id ?? null, county: u.county ?? null, region: u.region ?? null })
-                            setEditScopeError(null)
-                          }}
-                          className="text-xs text-purple-600 hover:text-purple-800"
-                        >
-                          Edit Scope
-                        </button>
-                      )}
-                      {isAdmin && (
-                        <button
-                          onClick={() => { setResetModal({ id: u.id, name: u.full_name }); setResetPassword(''); setResetError(null) }}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Set Password
-                        </button>
-                      )}
-                      {isAdmin && u.id !== currentUser?.id && (
-                        <button
-                          onClick={() => setDeleteConfirm(u.id)}
-                          className="text-xs text-red-500 hover:text-red-700"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Username</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Region</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
+                  {isAdmin && <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {users?.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium">{u.full_name}</td>
+                    <td className="px-4 py-3 font-mono text-gray-700">{u.username ?? <span className="text-gray-400 italic">—</span>}</td>
+                    <td className="px-4 py-3 text-gray-600">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <span className="badge bg-blue-50 text-blue-700">{ROLE_LABELS[u.role]}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {u.role === 'clerk'
+                        ? (u.region ?? <span className="text-amber-600 font-medium">⚠ No region set</span>)
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`badge ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {u.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400">{formatDate(u.created_at)}</td>
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => toggleActiveMutation.mutate({ id: u.id, is_active: !u.is_active })}
+                            className={`text-xs ${u.is_active ? 'text-amber-600 hover:text-amber-800' : 'text-green-600 hover:text-green-800'}`}
+                          >
+                            {u.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                          {u.role === 'clerk' && (
+                            <button
+                              onClick={() => {
+                                setEditRegionModal({ id: u.id, name: u.full_name, region: u.region ?? null })
+                                setEditRegion(u.region ?? '')
+                                setEditRegionError(null)
+                              }}
+                              className="text-xs text-purple-600 hover:text-purple-800"
+                            >
+                              Edit Region
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setResetModal({ id: u.id, name: u.full_name }); setResetPassword(''); setResetError(null) }}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            Set Password
+                          </button>
+                          {u.id !== currentUser?.id && (
+                            <button
+                              onClick={() => setDeleteConfirm(u.id)}
+                              className="text-xs text-red-500 hover:text-red-700"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {/* Reset password modal */}
       {resetModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="card w-full max-w-sm">
@@ -367,72 +303,27 @@ export default function UsersPage() {
         </div>
       )}
 
-      {editScopeModal && (
+      {editRegionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="card w-full max-w-sm">
-            <h3 className="font-semibold text-gray-900 mb-1">Edit Geographic Scope</h3>
+            <h3 className="font-semibold text-gray-900 mb-1">Edit Region</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Updating assignment for <span className="font-medium text-gray-700">{editScopeModal.name}</span>.
+              Updating region for <span className="font-medium text-gray-700">{editRegionModal.name}</span>.
             </p>
-            {NEEDS_STATION.has(editScopeModal.role) && (
-              <div className="mb-3">
-                <label className="label">Assigned Station</label>
-                <select
-                  className="input"
-                  value={editScopeValue.station_id ?? ''}
-                  onChange={(e) => {
-                    const sid = e.target.value ? Number(e.target.value) : null
-                    const st = sid ? stations?.find(s => s.id === sid) : null
-                    setEditScopeValue({ station_id: sid, county: st?.county ?? null, region: st?.region ?? null })
-                  }}
-                >
-                  <option value="">Select station…</option>
-                  {stations?.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.county} ({s.region})</option>)}
-                </select>
-                {editScopeValue.station_id && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    County: <span className="font-medium">{editScopeValue.county ?? '—'}</span>
-                    {' · '}Region: <span className="font-medium">{editScopeValue.region ?? '—'}</span>
-                  </p>
-                )}
-              </div>
-            )}
-            {NEEDS_COUNTY.has(editScopeModal.role) && (
-              <div className="mb-3">
-                <label className="label">Assigned County</label>
-                <select
-                  className="input"
-                  value={editScopeValue.county ?? ''}
-                  onChange={(e) => setEditScopeValue(v => ({ ...v, county: e.target.value || null }))}
-                >
-                  <option value="">Select county…</option>
-                  {counties.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            )}
-            {NEEDS_REGION.has(editScopeModal.role) && (
-              <div className="mb-3">
-                <label className="label">Assigned Region</label>
-                <select
-                  className="input"
-                  value={editScopeValue.region ?? ''}
-                  onChange={(e) => setEditScopeValue(v => ({ ...v, region: e.target.value || null }))}
-                >
-                  <option value="">Select region…</option>
-                  {regions.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-            )}
-            {editScopeError && <p className="text-xs text-red-600 mb-3">{editScopeError}</p>}
+            <select className="input mb-3" value={editRegion} onChange={(e) => setEditRegion(e.target.value)}>
+              <option value="">Select region…</option>
+              {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+            {editRegionError && <p className="text-xs text-red-600 mb-3">{editRegionError}</p>}
             <div className="flex gap-3">
               <button
-                onClick={() => editScopeMutation.mutate({ id: editScopeModal.id, patch: editScopeValue })}
-                disabled={editScopeMutation.isPending}
+                onClick={() => editRegionMutation.mutate({ id: editRegionModal.id, region: editRegion })}
+                disabled={!editRegion || editRegionMutation.isPending}
                 className="btn-primary flex-1"
               >
-                {editScopeMutation.isPending ? 'Saving…' : 'Save'}
+                {editRegionMutation.isPending ? 'Saving…' : 'Save'}
               </button>
-              <button onClick={() => setEditScopeModal(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => setEditRegionModal(null)} className="btn-secondary flex-1">Cancel</button>
             </div>
           </div>
         </div>

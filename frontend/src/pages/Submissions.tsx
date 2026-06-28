@@ -12,7 +12,7 @@ const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 
 export default function SubmissionsPage() {
   const { canApprove, myPendingStatus, isClerk } = useAuth()
-  const showStation = !isClerk  // county/regional/HQ see the station column
+  const showClerkRegion = isClerk
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | ''>((searchParams.get('status') as SubmissionStatus) || '')
@@ -69,7 +69,9 @@ export default function SubmissionsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Submissions</h1>
           <p className="text-gray-500 mt-1">Monthly ID statistics submissions</p>
         </div>
-        <Link to="/submissions/new" className="btn-primary">+ New Submission</Link>
+        {isClerk && (
+          <Link to="/submissions/new" className="btn-primary">+ New Submission</Link>
+        )}
       </div>
 
       {/* Filters */}
@@ -100,7 +102,8 @@ export default function SubmissionsPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Period</th>
-                {showStation && <th className="text-left px-4 py-3 font-medium text-gray-600">Station</th>}
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Station</th>
+                {showClerkRegion && <th className="text-left px-4 py-3 font-medium text-gray-600">Region</th>}
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Submitted By</th>
                 <th className="text-right px-4 py-3 font-medium text-blue-600">Applications</th>
                 <th className="text-right px-4 py-3 font-medium text-green-600">IDs Received</th>
@@ -114,7 +117,7 @@ export default function SubmissionsPage() {
             <tbody className="divide-y divide-gray-100">
               {submissions?.length === 0 && (
                 <tr>
-                  <td colSpan={showStation ? 10 : 9} className="text-center py-10 text-gray-400">No submissions found.</td>
+                  <td colSpan={showClerkRegion ? 11 : 10} className="text-center py-10 text-gray-400">No submissions found.</td>
                 </tr>
               )}
               {submissions?.map((sub) => (
@@ -131,11 +134,12 @@ export default function SubmissionsPage() {
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
                       )}
                     </td>
-                    {showStation && (
-                      <td className="px-4 py-3 text-xs text-gray-600">
-                        <div className="font-medium">{sub.station_name ?? `#${sub.station_id}`}</div>
-                        {sub.station_county && <div className="text-gray-400">{sub.station_county}</div>}
-                      </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      <div className="font-medium">{sub.station_name ?? `#${sub.station_id}`}</div>
+                      {sub.station_county && <div className="text-gray-400">{sub.station_county}</div>}
+                    </td>
+                    {showClerkRegion && (
+                      <td className="px-4 py-3 text-xs text-gray-600">{sub.station_region ?? '—'}</td>
                     )}
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {sub.submitted_by_name ?? `User #${sub.submitted_by}`}
@@ -188,7 +192,7 @@ export default function SubmissionsPage() {
                   {/* Expandable detail (non-submitted rows or non-reviewers) */}
                   {expanded === sub.id && (
                     <tr key={`${sub.id}-detail`} className="bg-slate-50">
-                      <td colSpan={showStation ? 9 : 8} className="px-6 py-5">
+                      <td colSpan={showClerkRegion ? 10 : 9} className="px-6 py-5">
                         {/* Modules 1–3 */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
                           {PREFIXES.map((px) => (

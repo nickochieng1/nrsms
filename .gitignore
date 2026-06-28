@@ -41,3 +41,7 @@ frontend/.env.*
 
 # Logs
 *.log
+
+# Reference/data files — not application code, shouldn't bloat the repo
+/Usajili Performance Teso North T1.xlsx
+/backend/STATISTICS 2026 ORIGINAL.xlsx

@@ -1,5 +1,7 @@
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import text, update
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_audit_meta, get_current_user, require_role
@@ -15,14 +17,25 @@ from app.services import audit as audit_svc
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+def _visible_users(db: Session) -> List[User]:
+    """Admin manages operational users; admin accounts are not listed."""
+    return (
+        db.query(User)
+        .filter(User.role != UserRole.ADMIN)
+        .order_by(User.full_name)
+        .all()
+    )
+
+
 @router.get("", response_model=list[UserOut])
 def list_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
 ):
-    return crud_user.get_all(db, skip=skip, limit=limit)
+    users = _visible_users(db)
+    return users[skip : skip + limit]
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -30,14 +43,17 @@ def create_user(
     body: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
+    if not body.username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    if body.role == UserRole.CLERK and not body.region:
+        raise HTTPException(status_code=400, detail="Clerks must be assigned a region")
     if crud_user.get_by_email(db, body.email):
         raise HTTPException(status_code=400, detail="Email already registered")
-    if body.username and crud_user.get_by_username(db, body.username):
+    if crud_user.get_by_username(db, body.username):
         raise HTTPException(status_code=400, detail="Username already taken")
     user = crud_user.create(db, body)
-    # New users created by admin must change their password on first login
     user.must_change_password = True
     db.commit()
     db.refresh(user)
@@ -51,10 +67,10 @@ def create_user(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR)),
 ):
     user = crud_user.get(db, user_id)
-    if not user:
+    if not user or user.role == UserRole.ADMIN:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
@@ -65,11 +81,13 @@ def update_user(
     body: UserUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.DIRECTOR, UserRole.HQ_OFFICER)),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     user = crud_user.get(db, user_id)
-    if not user:
+    if not user or user.role == UserRole.ADMIN:
         raise HTTPException(status_code=404, detail="User not found")
+    if body.role == UserRole.CLERK and body.region is None and not user.region:
+        raise HTTPException(status_code=400, detail="Clerks must be assigned a region")
     old = {"email": user.email, "role": user.role, "is_active": user.is_active}
     updated = crud_user.update(db, user, body)
     meta = get_audit_meta(request)
@@ -87,7 +105,7 @@ def reset_user_password(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     user = crud_user.get(db, user_id)
-    if not user:
+    if not user or user.role == UserRole.ADMIN:
         raise HTTPException(status_code=404, detail="User not found")
     new_password = body.get("password", "")
     if len(new_password) < 6:
@@ -109,17 +127,14 @@ def delete_user(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     user = crud_user.get(db, user_id)
-    if not user:
+    if not user or user.role == UserRole.ADMIN:
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
     meta = get_audit_meta(request)
     audit_svc.log(db, user_id=current_user.id, action="DELETE", resource="user", resource_id=user_id,
                   old_value={"email": user.email, "role": user.role}, **meta)
-    # Commit the audit log first so it's preserved
     db.commit()
-    # PRAGMA foreign_keys is a no-op inside a transaction, so use a raw connection
-    # outside the session to perform the delete with FK enforcement temporarily off.
     with engine.connect() as conn:
         conn.execute(text("PRAGMA foreign_keys=OFF"))
         conn.execute(text("UPDATE submissions SET reviewed_by=NULL WHERE reviewed_by=:uid"), {"uid": user_id})

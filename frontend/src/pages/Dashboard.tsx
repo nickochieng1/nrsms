@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { getSubmissions } from '@/api/submissions'
-import { getSummaryReport } from '@/api/reports'
-import { getStations } from '@/api/stations'
+import { getSummaryReport, getTopCounties } from '@/api/reports'
 import { STATUS_COLORS, STATUS_LABELS } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, MODULE_LABELS, MODULE_COLORS } from '@/types'
 import type { ModulePrefix, MonthlyData } from '@/types'
@@ -49,22 +48,8 @@ export default function DashboardPage() {
   const { user, canApprove, canViewReports, myPendingStatus } = useAuth()
   const [year, setYear] = useState(CUR_YEAR)
 
-  // Geographic scope derived from user's role assignment
-  const scopeStationId = user?.station_id ?? undefined
-  const scopeCounty    = user?.county    ?? undefined
-  const scopeRegion    = user?.region    ?? undefined
-
-  const { data: stations } = useQuery({
-    queryKey: ['stations'],
-    queryFn: getStations,
-    enabled: !!scopeStationId,
-  })
-
-  const stationName = scopeStationId
-    ? (stations?.find((s) => s.id === scopeStationId)?.name ?? `Station #${scopeStationId}`)
-    : null
-
-  const scopeLabel = stationName ?? scopeCounty ?? scopeRegion ?? null
+  const scopeRegion = user?.region ?? undefined
+  const scopeLabel = scopeRegion ?? null
 
   const { data: recentSubmissions } = useQuery({
     queryKey: ['submissions', 'recent'],
@@ -72,8 +57,14 @@ export default function DashboardPage() {
   })
 
   const { data: report } = useQuery({
-    queryKey: ['report', 'summary', year, scopeStationId, scopeCounty, scopeRegion],
-    queryFn: () => getSummaryReport(year, scopeStationId, scopeCounty, scopeRegion),
+    queryKey: ['report', 'summary', year, scopeRegion],
+    queryFn: () => getSummaryReport(year, undefined, undefined, scopeRegion),
+    enabled: canViewReports,
+  })
+
+  const { data: topCounties } = useQuery({
+    queryKey: ['report', 'top-counties', year],
+    queryFn: () => getTopCounties(year, undefined, undefined, 10),
     enabled: canViewReports,
   })
 
@@ -250,6 +241,32 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
         </>
+      )}
+
+      {/* Top counties by registration volume */}
+      {topCounties && topCounties.counties.length > 0 && (
+        <div className="card mb-6">
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Top Counties — Registration Volume</h2>
+          <p className="text-xs text-gray-400 mb-4">Station submissions (applications) — {year}</p>
+          <div className="space-y-2">
+            {(() => {
+              const max = Math.max(...topCounties.counties.map((c) => c.total), 1)
+              return topCounties.counties.map((c, i) => (
+                <div key={c.county} className="flex items-center gap-3">
+                  <span className="w-5 text-xs font-semibold text-gray-400 text-right">{i + 1}</span>
+                  <span className="w-32 text-sm font-medium text-gray-700 truncate">{c.county}</span>
+                  <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                    <div
+                      className="h-3 rounded-full bg-primary-600"
+                      style={{ width: `${(c.total / max) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-20 text-right text-sm font-semibold text-gray-800">{c.total.toLocaleString()}</span>
+                </div>
+              ))
+            })()}
+          </div>
+        </div>
       )}
 
       {/* Recent submissions */}

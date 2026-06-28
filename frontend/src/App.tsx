@@ -6,15 +6,21 @@ import ChangePasswordPage from '@/pages/ChangePassword'
 import DashboardPage from '@/pages/Dashboard'
 import SubmissionsPage from '@/pages/Submissions'
 import NewSubmissionPage from '@/pages/NewSubmission'
+import MobileRegistrationsPage from '@/pages/MobileRegistrations'
 import ReportsPage from '@/pages/Reports'
+import MashinaniReportsPage from '@/pages/MashinaniReports'
 import AuditLogPage from '@/pages/AuditLog'
 import StationsPage from '@/pages/Stations'
 import UsersPage from '@/pages/Users'
 
 import type { UserRole } from '@/types'
-const REPORT_ROLES: UserRole[] = ['county_registrar', 'regional_registrar', 'hq_clerk', 'hq_officer', 'director', 'admin']
-const HQ_MANAGER: UserRole[]   = ['hq_officer', 'director', 'admin']
-const ADMIN_ONLY: UserRole[]   = ['admin']
+
+const CLERK_ONLY: UserRole[] = ['clerk']
+const CLERK_AND_REGISTRAR: UserRole[] = ['clerk', 'registrar']
+const MASHINANI_ROLES: UserRole[] = ['clerk', 'registrar', 'director']
+const REPORT_ROLES: UserRole[] = ['registrar', 'director']
+const ADMIN_ONLY: UserRole[] = ['admin']
+const ADMIN_AND_DIRECTOR: UserRole[] = ['admin', 'director']
 
 export default function App() {
   return (
@@ -26,23 +32,31 @@ export default function App() {
           <Route path="/change-password" element={<ChangePasswordPage />} />
 
           <Route element={<AppLayout />}>
-            <Route path="/dashboard"       element={<DashboardPage />} />
-            <Route path="/submissions"     element={<SubmissionsPage />} />
-            <Route path="/submissions/new" element={<NewSubmissionPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+
+            <Route element={<RequireAuth allowedRoles={CLERK_AND_REGISTRAR} />}>
+              <Route path="/submissions" element={<SubmissionsPage />} />
+            </Route>
+
+            <Route element={<RequireAuth allowedRoles={MASHINANI_ROLES} />}>
+              <Route path="/mobile-registrations" element={<MobileRegistrationsPage />} />
+            </Route>
+
+            <Route element={<RequireAuth allowedRoles={CLERK_ONLY} />}>
+              <Route path="/submissions/new" element={<NewSubmissionPage />} />
+            </Route>
 
             <Route element={<RequireAuth allowedRoles={REPORT_ROLES} />}>
               <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/mashinani-reports" element={<MashinaniReportsPage />} />
+            </Route>
+
+            <Route element={<RequireAuth allowedRoles={ADMIN_AND_DIRECTOR} />}>
+              <Route path="/users" element={<UsersPage />} />
             </Route>
 
             <Route element={<RequireAuth allowedRoles={ADMIN_ONLY} />}>
               <Route path="/audit" element={<AuditLogPage />} />
-            </Route>
-
-            <Route element={<RequireAuth allowedRoles={HQ_MANAGER} />}>
-              <Route path="/users" element={<UsersPage />} />
-            </Route>
-
-            <Route element={<RequireAuth allowedRoles={['director', 'admin', 'regional_registrar', 'county_registrar']} />}>
               <Route path="/stations" element={<StationsPage />} />
             </Route>
           </Route>

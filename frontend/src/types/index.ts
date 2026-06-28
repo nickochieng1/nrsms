@@ -1,12 +1,4 @@
-export type UserRole =
-  | 'clerk'
-  | 'sub_county_registrar'
-  | 'county_registrar'
-  | 'regional_registrar'
-  | 'hq_clerk'
-  | 'hq_officer'
-  | 'director'
-  | 'admin'
+export type UserRole = 'clerk' | 'registrar' | 'director' | 'admin'
 
 export interface User {
   id: number
@@ -33,9 +25,6 @@ export interface Station {
 export type SubmissionStatus =
   | 'draft'
   | 'submitted'
-  | 'sub_county_approved'
-  | 'county_approved'
-  | 'regional_approved'
   | 'approved'
   | 'rejected'
 
@@ -171,6 +160,126 @@ export interface MonthlyData {
 
 export interface SummaryReport {
   year: number
+  month?: number | null
+  quarter?: number | null
   monthly: MonthlyData[]
   totals: Record<string, number>
+}
+
+export interface MobileRegistrationEntry {
+  id?: number
+  entry_date: string
+  ward: string | null
+  venue: string | null
+
+  live_npr_male: number
+  live_npr_female: number
+  live_npr_total: number
+  live_replacement_male: number
+  live_replacement_female: number
+  live_replacement_total: number
+  live_subtotal: number
+
+  manual_npr_male: number
+  manual_npr_female: number
+  manual_npr_total: number
+  manual_replacement_male: number
+  manual_replacement_female: number
+  manual_replacement_total: number
+  manual_subtotal: number
+
+  daily_total: number
+}
+
+export interface MobileRegistration {
+  id: number
+  county: string
+  subcounty: string
+  period_month: number
+  period_year: number
+  notes: string | null
+  created_by: number
+  created_by_name: string | null
+  is_closed: boolean
+  closed_at: string | null
+  closed_by: number | null
+
+  age_25_40_male: number
+  age_25_40_female: number
+  age_25_40_total: number
+  age_41_60_male: number
+  age_41_60_female: number
+  age_41_60_total: number
+  age_60_plus_male: number
+  age_60_plus_female: number
+  age_60_plus_total: number
+
+  entries: MobileRegistrationEntry[]
+  total_registered: number
+
+  created_at: string
+  updated_at: string
+}
+
+export interface MobileRegistrationTarget {
+  county: string
+  period_month: number
+  period_year: number
+  target_set: number
+  total_registered: number
+  target_achievement_pct: number
+}
+
+export interface MobileSummaryRow {
+  county: string
+  subcounty: string
+  live_npr_male: number; live_npr_female: number; live_npr_total: number
+  live_replacement_male: number; live_replacement_female: number; live_replacement_total: number
+  manual_npr_male: number; manual_npr_female: number; manual_npr_total: number
+  manual_replacement_male: number; manual_replacement_female: number; manual_replacement_total: number
+  live_total: number
+  manual_total: number
+  male_total: number
+  female_total: number
+  total_registered: number
+}
+
+export interface MobileCountyTotal {
+  county: string
+  target_set: number
+  total_registered: number
+  target_achievement_pct: number
+}
+
+export interface MobileSummaryTotals {
+  live_npr_male: number; live_npr_female: number; live_npr_total: number
+  live_replacement_male: number; live_replacement_female: number; live_replacement_total: number
+  manual_npr_male: number; manual_npr_female: number; manual_npr_total: number
+  manual_replacement_male: number; manual_replacement_female: number; manual_replacement_total: number
+  live_total: number; manual_total: number
+  male_total: number; female_total: number
+  total_registered: number
+  target_set: number; target_achievement_pct: number
+  counties_covered: number; subcounties_covered: number
+}
+
+export interface MobileSummaryReport {
+  year: number
+  month?: number | null
+  quarter?: number | null
+  breakdown: MobileSummaryRow[]
+  county_totals: MobileCountyTotal[]
+  totals: MobileSummaryTotals
+}
+
+export interface CountyVolume {
+  county: string
+  total: number
+}
+
+export interface TopCountiesReport {
+  year: number
+  month?: number | null
+  quarter?: number | null
+  counties: CountyVolume[]
 }

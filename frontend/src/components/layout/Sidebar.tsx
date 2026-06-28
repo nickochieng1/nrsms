@@ -4,18 +4,18 @@ import { ROLE_LABELS } from '@/utils/format'
 import clsx from 'clsx'
 import nrbLogo from '@/images/nrb-kenya.svg'
 
-const ALL_ROLES = ['clerk','sub_county_registrar','county_registrar','regional_registrar','hq_clerk','hq_officer','director','admin']
-const HQ        = ['hq_clerk','hq_officer','director','admin']
-const MANAGERS  = ['hq_officer','director','admin']
+import type { UserRole } from '@/types'
 
-const NAV_ITEMS = [
-  { to: '/dashboard',       label: 'Dashboard',      roles: ALL_ROLES,                                          end: false },
-  { to: '/submissions/new', label: 'New Submission',  roles: ['clerk', 'admin'],                                 end: false },
-  { to: '/submissions',     label: 'Submissions',     roles: ALL_ROLES,                                          end: true  },
-  { to: '/reports',         label: 'Reports',         roles: ['county_registrar','regional_registrar',...HQ],    end: false },
-  { to: '/audit',           label: 'Audit Log',       roles: ['admin'],                                          end: false },
-  { to: '/stations',        label: 'Stations',        roles: ['director','admin','regional_registrar','county_registrar'], end: false },
-  { to: '/users',           label: 'Users',           roles: MANAGERS,                                           end: false },
+const NAV_ITEMS: { to: string; label: string; roles: UserRole[]; end: boolean }[] = [
+  { to: '/dashboard',             label: 'Dashboard',           roles: ['clerk', 'registrar', 'director', 'admin'], end: false },
+  { to: '/submissions/new',       label: 'New Submission',      roles: ['clerk'],                                  end: false },
+  { to: '/submissions',           label: 'Submissions',         roles: ['clerk', 'registrar'],                     end: true  },
+  { to: '/mobile-registrations',  label: 'Usajili Mashinani',   roles: ['clerk', 'registrar', 'director'],         end: true  },
+  { to: '/reports',               label: 'Reports',             roles: ['registrar', 'director'],                  end: false },
+  { to: '/mashinani-reports',     label: 'Mashinani Report',    roles: ['registrar', 'director'],                  end: false },
+  { to: '/users',                 label: 'Users',                roles: ['admin', 'director'],                     end: false },
+  { to: '/stations',              label: 'Stations',            roles: ['admin'],                                  end: false },
+  { to: '/audit',                 label: 'Audit Log',           roles: ['admin'],                                  end: false },
 ]
 
 interface SidebarProps {
@@ -31,14 +31,12 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   return (
     <aside className="w-64 h-full min-h-screen bg-primary-900 text-white flex flex-col">
-      {/* Logo area */}
       <div className="bg-[#E3EDEB] px-5 py-4 flex items-center justify-between border-b border-black/20">
         <img
           src={nrbLogo}
           alt="National Registration Bureau"
           className="h-9 w-auto object-contain"
         />
-        {/* Close button — mobile only */}
         {onClose && (
           <button
             onClick={onClose}
@@ -52,7 +50,6 @@ export function Sidebar({ onClose }: SidebarProps) {
         )}
       </div>
 
-      {/* System label strip */}
       <div className="px-5 py-2.5 border-b border-white/10">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-primary-200">
           Statistics Management System

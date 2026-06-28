@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl } from '@/api/reports'
+import {
+  getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl,
+} from '@/api/reports'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
 import { NRB_CATS, CAT_LABELS, CAT_COLORS, MODULE_LABELS, MODULE_COLORS } from '@/types'
@@ -28,6 +30,7 @@ export default function ReportsPage() {
   const { isDirector } = useAuth()
   const [year, setYear] = useState(new Date().getFullYear())
   const [quarter, setQuarter] = useState<number | undefined>(undefined)
+  const [month, setMonth] = useState<number | undefined>(undefined)
   const [region, setRegion] = useState<string>('')
   const [county, setCounty] = useState<string>('')
   const [stationId, setStationId] = useState<number | undefined>(undefined)
@@ -48,8 +51,8 @@ export default function ReportsPage() {
   const activeCounty  = stationId ? undefined : (county || undefined)
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, quarter, stationId, activeCounty, activeRegion],
-    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter),
+    queryKey: ['report', 'summary', year, quarter, month, stationId, activeCounty, activeRegion],
+    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter, month),
   })
 
   function handleRegionChange(r: string) {
@@ -64,7 +67,7 @@ export default function ReportsPage() {
   }
 
   // Label showing current scope and period
-  const periodLabel = quarter ? QUARTER_LABELS[quarter] : `Full Year ${year}`
+  const periodLabel = month ? `${MONTH_NAMES[month - 1]} ${year}` : quarter ? QUARTER_LABELS[quarter] : `Full Year ${year}`
   const scopeLabel = stationId
     ? (stations?.find((s) => s.id === stationId)?.name ?? `Station #${stationId}`)
     : region
@@ -122,10 +125,10 @@ export default function ReportsPage() {
       setExportFormat(fmt)
       setPickedMonth(new Date().getMonth() + 1)
     } else {
-      // Excel and CSV: download immediately (full year or with month filter)
+      // Excel and CSV: download immediately, respecting the on-screen month/quarter filter
       const urlFn = fmt === 'csv' ? getCsvReportUrl : getExcelReportUrl
-      const url   = urlFn(year, undefined, stationId, activeCounty, activeRegion, quarter)
-      const suffix = quarter ? `_Q${quarter}` : '_annual'
+      const url   = urlFn(year, month, stationId, activeCounty, activeRegion, quarter)
+      const suffix = month ? `_${String(month).padStart(2, '0')}` : quarter ? `_Q${quarter}` : '_annual'
       const ext   = fmt === 'csv' ? 'csv' : 'xlsx'
       downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
     }
@@ -240,13 +243,34 @@ export default function ReportsPage() {
             <select
               className="input w-44"
               value={quarter ?? ''}
-              onChange={(e) => setQuarter(e.target.value ? Number(e.target.value) : undefined)}
+              onChange={(e) => {
+                setQuarter(e.target.value ? Number(e.target.value) : undefined)
+                setMonth(undefined)
+              }}
             >
               <option value="">Full Year (Annual)</option>
               <option value="1">Q1 — Jan, Feb, Mar</option>
               <option value="2">Q2 — Apr, May, Jun</option>
               <option value="3">Q3 — Jul, Aug, Sep</option>
               <option value="4">Q4 — Oct, Nov, Dec</option>
+            </select>
+          </div>
+
+          {/* Month — overrides quarter/full-year when set */}
+          <div>
+            <label className="label">Month</label>
+            <select
+              className="input w-40"
+              value={month ?? ''}
+              onChange={(e) => {
+                setMonth(e.target.value ? Number(e.target.value) : undefined)
+                setQuarter(undefined)
+              }}
+            >
+              <option value="">All months</option>
+              {MONTH_NAMES.map((m, i) => (
+                <option key={i + 1} value={i + 1}>{m}</option>
+              ))}
             </select>
           </div>
 

@@ -13,13 +13,10 @@ if TYPE_CHECKING:
 
 
 class SubmissionStatus(str, enum.Enum):
-    DRAFT               = "draft"
-    SUBMITTED           = "submitted"            # clerk submitted, awaiting sub-county registrar
-    SUB_COUNTY_APPROVED = "sub_county_approved"  # sub-county approved, awaiting county registrar
-    COUNTY_APPROVED     = "county_approved"       # county approved, awaiting regional registrar
-    REGIONAL_APPROVED   = "regional_approved"     # regional approved, awaiting HQ
-    APPROVED            = "approved"             # HQ final approval
-    REJECTED            = "rejected"
+    DRAFT     = "draft"
+    SUBMITTED = "submitted"  # clerk submitted, awaiting registrar
+    APPROVED  = "approved"   # registrar approved — final
+    REJECTED  = "rejected"
 
 
 def _int(default: int = 0):

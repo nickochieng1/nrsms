@@ -165,7 +165,6 @@ function RegisterTable({
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function NewSubmissionPage() {
   const { user, isClerk } = useAuth()
-  const isStationLocked = isClerk
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [apiError, setApiError] = useState<string | null>(null)
@@ -174,10 +173,13 @@ export default function NewSubmissionPage() {
   const { isOnline, addToQueue } = useOfflineQueue()
 
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
+  const regionStations = (stations ?? []).filter(
+    (s) => !user?.region || s.region.toLowerCase() === user.region.toLowerCase(),
+  )
   const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      station_id: user?.station_id ?? 0,
+      station_id: 0,
       period_month: new Date().getMonth() + 1,
       period_year: new Date().getFullYear(),
     },
@@ -203,7 +205,7 @@ export default function NewSubmissionPage() {
         period: `${monthName} ${values.period_year}`,
       })
       setSavedOffline(true)
-      reset({ station_id: user?.station_id ?? 0, period_month: new Date().getMonth() + 1, period_year: new Date().getFullYear() })
+      reset({ station_id: 0, period_month: new Date().getMonth() + 1, period_year: new Date().getFullYear() })
       setActiveTab(0)
       return
     }
@@ -272,58 +274,35 @@ export default function NewSubmissionPage() {
         <div className="card mb-5">
           <h2 className="font-semibold text-gray-800 mb-4">Reporting Period &amp; Station</h2>
 
-          {isStationLocked ? (
-            /* Station officers and registrars see only their assigned station */
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">Station</label>
-                <div className="input bg-gray-50 text-gray-700 font-medium cursor-default select-none">
-                  {stations?.find((s) => s.id === user?.station_id)?.name ?? '—'}
-                  <span className="ml-2 text-xs text-gray-400">
-                    {stations?.find((s) => s.id === user?.station_id)?.county}
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Month</label>
-                  <select className="input" {...register('period_month')}>
-                    {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Year</label>
-                  <select className="input" {...register('period_year')}>
-                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Admins / registrars get the 3-level station picker */
-            <div className="grid grid-cols-2 gap-6">
-              <StationPicker
-                stations={stations ?? []}
-                value={watch('station_id') || undefined}
-                onChange={(id) => setValue('station_id', id ?? 0, { shouldValidate: true })}
-                error={errors.station_id?.message}
-              />
-              <div className="space-y-3">
-                <div>
-                  <label className="label">Month</label>
-                  <select className="input" {...register('period_month')}>
-                    {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Year</label>
-                  <select className="input" {...register('period_year')}>
-                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
+          {isClerk && user?.region && (
+            <p className="text-sm text-gray-500 mb-4">
+              Assigned region: <span className="font-medium text-gray-800">{user.region}</span>
+              {' '}— select a station within your region.
+            </p>
           )}
+
+          <div className="grid grid-cols-2 gap-6">
+            <StationPicker
+              stations={regionStations}
+              value={watch('station_id') || undefined}
+              onChange={(id) => setValue('station_id', id ?? 0, { shouldValidate: true })}
+              error={errors.station_id?.message}
+            />
+            <div className="space-y-3">
+              <div>
+                <label className="label">Month</label>
+                <select className="input" {...register('period_month')}>
+                  {MONTH_NAMES.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Year</label>
+                <select className="input" {...register('period_year')}>
+                  {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ── Tab navigation ── */}

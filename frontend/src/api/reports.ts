@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { SummaryReport } from '@/types'
+import type { SummaryReport, MobileSummaryReport, TopCountiesReport } from '@/types'
 
 export async function getSummaryReport(
   year: number,
@@ -7,9 +7,10 @@ export async function getSummaryReport(
   county?: string,
   region?: string,
   quarter?: number,
+  month?: number,
 ): Promise<SummaryReport> {
   const { data } = await apiClient.get<SummaryReport>('/reports/summary', {
-    params: { year, station_id, county, region, quarter },
+    params: { year, station_id, county, region, quarter, month },
   })
   return data
 }
@@ -43,3 +44,53 @@ export const getWordReportUrl = (year: number, month?: number, station_id?: numb
 
 export const getCsvReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
   _buildUrl('csv', year, month, station_id, county, region, quarter)
+
+export async function getMobileSummary(
+  year: number,
+  month?: number,
+  quarter?: number,
+  county?: string,
+  subcounty?: string,
+): Promise<MobileSummaryReport> {
+  const { data } = await apiClient.get<MobileSummaryReport>('/reports/mobile-summary', {
+    params: { year, month, quarter, county, subcounty },
+  })
+  return data
+}
+
+function _buildMobileUrl(
+  path: string,
+  year: number,
+  month?: number,
+  quarter?: number,
+  county?: string,
+  subcounty?: string,
+): string {
+  const params = new URLSearchParams({ year: String(year) })
+  if (month)     params.set('month',     String(month))
+  if (quarter)   params.set('quarter',   String(quarter))
+  if (county)    params.set('county',    county)
+  if (subcounty) params.set('subcounty', subcounty)
+  return `/api/v1/reports/${path}?${params}`
+}
+
+export const getMobileExcelReportUrl = (year: number, month?: number, quarter?: number, county?: string, subcounty?: string) =>
+  _buildMobileUrl('mobile-excel', year, month, quarter, county, subcounty)
+
+export const getMobilePdfReportUrl = (year: number, month?: number, quarter?: number, county?: string, subcounty?: string) =>
+  _buildMobileUrl('mobile-pdf', year, month, quarter, county, subcounty)
+
+export const getMobileWordReportUrl = (year: number, month?: number, quarter?: number, county?: string, subcounty?: string) =>
+  _buildMobileUrl('mobile-word', year, month, quarter, county, subcounty)
+
+export async function getTopCounties(
+  year: number,
+  month?: number,
+  quarter?: number,
+  limit?: number,
+): Promise<TopCountiesReport> {
+  const { data } = await apiClient.get<TopCountiesReport>('/reports/top-counties', {
+    params: { year, month, quarter, limit },
+  })
+  return data
+}

@@ -28,6 +28,7 @@ def get_all(
     status: Optional[SubmissionStatus] = None,
     statuses: Optional[Sequence[SubmissionStatus]] = None,
     year: Optional[int] = None,
+    submitted_by: Optional[int] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> List[Submission]:
@@ -36,6 +37,8 @@ def get_all(
         q = q.filter(Submission.station_id == station_id)
     elif station_ids is not None:
         q = q.filter(Submission.station_id.in_(station_ids))
+    if submitted_by is not None:
+        q = q.filter(Submission.submitted_by == submitted_by)
     if status:
         q = q.filter(Submission.status == status)
     elif statuses is not None:
@@ -82,30 +85,6 @@ def update(db: Session, submission: Submission, data: SubmissionUpdate) -> Submi
 def submit(db: Session, submission: Submission) -> Submission:
     submission.status = SubmissionStatus.SUBMITTED
     submission.submitted_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(submission)
-    return submission
-
-
-def sub_county_approve(db: Session, submission: Submission, reviewer_id: int) -> Submission:
-    submission.status = SubmissionStatus.SUB_COUNTY_APPROVED
-    submission.reviewed_by = reviewer_id
-    db.commit()
-    db.refresh(submission)
-    return submission
-
-
-def county_approve(db: Session, submission: Submission, reviewer_id: int) -> Submission:
-    submission.status = SubmissionStatus.COUNTY_APPROVED
-    submission.reviewed_by = reviewer_id
-    db.commit()
-    db.refresh(submission)
-    return submission
-
-
-def regional_approve(db: Session, submission: Submission, reviewer_id: int) -> Submission:
-    submission.status = SubmissionStatus.REGIONAL_APPROVED
-    submission.reviewed_by = reviewer_id
     db.commit()
     db.refresh(submission)
     return submission

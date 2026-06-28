@@ -5,8 +5,11 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from app.core.dependencies import get_current_user, require_role
 from app.db.session import get_db
+from app.models.mobile_registration import MobileRegistration, MobileRegistrationEntry, MobileRegistrationTarget
 from app.models.submission import Submission, SubmissionStatus
 from app.models.station import Station
 from app.models.user import User, UserRole
@@ -14,14 +17,12 @@ from app.services.computation import NRB_CATS
 from app.services.export import (
     build_excel_report, build_pdf_report, build_word_report,
     build_csv_report, build_region_county_data,
+    build_mobile_excel_report, build_mobile_pdf_report, build_mobile_word_report,
 )
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 REPORTABLE = (
-    SubmissionStatus.SUB_COUNTY_APPROVED,
-    SubmissionStatus.COUNTY_APPROVED,
-    SubmissionStatus.REGIONAL_APPROVED,
     SubmissionStatus.APPROVED,
 )
 
@@ -75,22 +76,15 @@ def _zero_month() -> dict:
 @router.get("/summary")
 def summary_report(
     year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
     county: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
 ):
-    # Lock each field role to their geographic scope
-    if current_user.role == UserRole.SUB_COUNTY_REGISTRAR:
-        station_id = current_user.station_id
-    elif current_user.role == UserRole.COUNTY_REGISTRAR:
-        county = current_user.county
-    elif current_user.role == UserRole.REGIONAL_REGISTRAR:
-        region = current_user.region
-
-    months = _quarter_months(quarter)
+    months = [month] if month else _quarter_months(quarter)
 
     q = db.query(Submission).filter(
         Submission.period_year == year,
@@ -100,11 +94,9 @@ def summary_report(
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
     elif county:
-        from sqlalchemy import func
         station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.county) == county.lower()).all()]
         q = q.filter(Submission.station_id.in_(station_ids))
     elif region:
-        from sqlalchemy import func
         station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.region) == region.lower()).all()]
         q = q.filter(Submission.station_id.in_(station_ids))
 
@@ -147,10 +139,186 @@ def summary_report(
 
     return {
         "year": year,
+        "month": month,
         "quarter": quarter,
         "monthly": [{"month": m, "month_name": MONTH_SHORT[m - 1], **monthly[m]} for m in months],
         "totals": totals,
     }
+
+
+def _mobile_summary_data(
+    db: Session, year: int, months: List[int], county: Optional[str] = None, subcounty: Optional[str] = None,
+) -> dict:
+    """Shared by the on-screen /mobile-summary endpoint and the Excel/PDF/Word exports."""
+    # No approval gate — every exercise's daily entries count, open or closed.
+    base_filter = [
+        MobileRegistration.period_year == year,
+        MobileRegistration.period_month.in_(months),
+    ]
+    if county:
+        base_filter.append(func.lower(MobileRegistration.county) == county.lower())
+    if subcounty:
+        base_filter.append(func.lower(MobileRegistration.subcounty) == subcounty.lower())
+
+    male_expr = (
+        MobileRegistrationEntry.live_npr_male + MobileRegistrationEntry.live_replacement_male
+        + MobileRegistrationEntry.manual_npr_male + MobileRegistrationEntry.manual_replacement_male
+    )
+    female_expr = (
+        MobileRegistrationEntry.live_npr_female + MobileRegistrationEntry.live_replacement_female
+        + MobileRegistrationEntry.manual_npr_female + MobileRegistrationEntry.manual_replacement_female
+    )
+
+    # Volume — summed from daily entries (one MobileRegistration can have many entry rows).
+    # Broken out the same way the field template captures it: Live Capture vs Manual,
+    # each split into NPR (Initial) and Replacement ("Duplicate") applications, by M/F.
+    # Target is NOT subcounty-level — it's set per county (MobileRegistrationTarget), shared
+    # across every subcounty exercise running in that county/period.
+    volume_q = (
+        db.query(
+            MobileRegistration.county,
+            MobileRegistration.subcounty,
+            func.sum(MobileRegistrationEntry.live_npr_male),
+            func.sum(MobileRegistrationEntry.live_npr_female),
+            func.sum(MobileRegistrationEntry.live_replacement_male),
+            func.sum(MobileRegistrationEntry.live_replacement_female),
+            func.sum(MobileRegistrationEntry.manual_npr_male),
+            func.sum(MobileRegistrationEntry.manual_npr_female),
+            func.sum(MobileRegistrationEntry.manual_replacement_male),
+            func.sum(MobileRegistrationEntry.manual_replacement_female),
+            func.sum(MobileRegistrationEntry.live_subtotal),
+            func.sum(MobileRegistrationEntry.manual_subtotal),
+            func.sum(male_expr),
+            func.sum(female_expr),
+            func.sum(MobileRegistrationEntry.daily_total),
+        )
+        .join(MobileRegistrationEntry, MobileRegistrationEntry.mobile_registration_id == MobileRegistration.id)
+        .filter(*base_filter)
+        .group_by(MobileRegistration.county, MobileRegistration.subcounty)
+    )
+
+    def _row(c, sc, lnm, lnf, lrm, lrf, mnm, mnf, mrm, mrf, live, manual, male, female, total) -> dict:
+        lnm, lnf, lrm, lrf = int(lnm or 0), int(lnf or 0), int(lrm or 0), int(lrf or 0)
+        mnm, mnf, mrm, mrf = int(mnm or 0), int(mnf or 0), int(mrm or 0), int(mrf or 0)
+        return {
+            "county": c, "subcounty": sc,
+            "live_npr_male": lnm, "live_npr_female": lnf, "live_npr_total": lnm + lnf,
+            "live_replacement_male": lrm, "live_replacement_female": lrf, "live_replacement_total": lrm + lrf,
+            "manual_npr_male": mnm, "manual_npr_female": mnf, "manual_npr_total": mnm + mnf,
+            "manual_replacement_male": mrm, "manual_replacement_female": mrf, "manual_replacement_total": mrm + mrf,
+            "live_total": int(live or 0), "manual_total": int(manual or 0),
+            "male_total": int(male or 0), "female_total": int(female or 0), "total_registered": int(total or 0),
+        }
+
+    results = sorted(
+        [_row(*row) for row in volume_q.all()],
+        key=lambda r: (r["county"], r["subcounty"]),
+    )
+
+    county_volume: dict = {}
+    for r in results:
+        county_volume.setdefault(r["county"], 0)
+        county_volume[r["county"]] += r["total_registered"]
+
+    target_filter = [MobileRegistrationTarget.period_year == year, MobileRegistrationTarget.period_month.in_(months)]
+    if county:
+        target_filter.append(func.lower(MobileRegistrationTarget.county) == county.lower())
+    target_rows = (
+        db.query(MobileRegistrationTarget.county, func.sum(MobileRegistrationTarget.target_set))
+        .filter(*target_filter)
+        .group_by(MobileRegistrationTarget.county)
+        .all()
+    )
+    county_target = {c: int(t or 0) for c, t in target_rows}
+
+    all_counties = sorted(set(county_volume) | set(county_target))
+    county_totals = []
+    for c in all_counties:
+        registered = county_volume.get(c, 0)
+        target_set = county_target.get(c, 0)
+        county_totals.append({
+            "county": c, "target_set": target_set, "total_registered": registered,
+            "target_achievement_pct": round((registered / target_set) * 100, 1) if target_set else 0.0,
+        })
+
+    counties_covered = len(county_volume)
+    subcounties_covered = len({(r["county"], r["subcounty"]) for r in results})
+
+    sum_field = lambda key: sum(r[key] for r in results)  # noqa: E731
+    totals = {
+        "live_npr_male": sum_field("live_npr_male"), "live_npr_female": sum_field("live_npr_female"),
+        "live_npr_total": sum_field("live_npr_total"),
+        "live_replacement_male": sum_field("live_replacement_male"), "live_replacement_female": sum_field("live_replacement_female"),
+        "live_replacement_total": sum_field("live_replacement_total"),
+        "manual_npr_male": sum_field("manual_npr_male"), "manual_npr_female": sum_field("manual_npr_female"),
+        "manual_npr_total": sum_field("manual_npr_total"),
+        "manual_replacement_male": sum_field("manual_replacement_male"), "manual_replacement_female": sum_field("manual_replacement_female"),
+        "manual_replacement_total": sum_field("manual_replacement_total"),
+        "live_total": sum_field("live_total"),
+        "manual_total": sum_field("manual_total"),
+        "male_total": sum_field("male_total"),
+        "female_total": sum_field("female_total"),
+        "total_registered": sum_field("total_registered"),
+        "target_set": sum(county_target.values()),
+        "counties_covered": counties_covered,
+        "subcounties_covered": subcounties_covered,
+    }
+    totals["target_achievement_pct"] = (
+        round((totals["total_registered"] / totals["target_set"]) * 100, 1) if totals["target_set"] else 0.0
+    )
+
+    return {"breakdown": results, "county_totals": county_totals, "totals": totals}
+
+
+@router.get("/mobile-summary")
+def mobile_summary_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
+):
+    """Usajili Mashinani — registration volume (incl. male/female) broken down by county/subcounty."""
+    months = [month] if month else _quarter_months(quarter)
+    data = _mobile_summary_data(db, year, months, county, subcounty)
+    return {"year": year, "month": month, "quarter": quarter, **data}
+
+
+@router.get("/top-counties")
+def top_counties_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
+):
+    """Top counties by registration volume — station submissions (applications) only.
+    Usajili Mashinani is reported separately (see /reports/mobile-summary) and is not
+    mixed into this ranking."""
+    months = [month] if month else _quarter_months(quarter)
+
+    station_rows = (
+        db.query(Station.county, func.sum(Submission.app_grand_total))
+        .join(Submission, Submission.station_id == Station.id)
+        .filter(
+            Submission.period_year == year,
+            Submission.period_month.in_(months),
+            Submission.status.in_(REPORTABLE),
+        )
+        .group_by(Station.county)
+        .all()
+    )
+
+    results = sorted(
+        [{"county": county, "total": int(total or 0)} for county, total in station_rows],
+        key=lambda r: r["total"],
+        reverse=True,
+    )[:limit]
+
+    return {"year": year, "month": month, "quarter": quarter, "counties": results}
 
 
 def _get_station_lookup(db: Session) -> dict:
@@ -172,10 +340,7 @@ def _query_submissions(db, year: int, month: int | None, station_id: int | None,
 
 
 def _export_role_deps():
-    return require_role(
-        UserRole.COUNTY_REGISTRAR, UserRole.REGIONAL_REGISTRAR,
-        UserRole.HQ_CLERK, UserRole.HQ_OFFICER, UserRole.DIRECTOR, UserRole.ADMIN,
-    )
+    return require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)
 
 
 @router.get("/excel")
@@ -262,5 +427,72 @@ def csv_report(
     return Response(
         content=csv_bytes,
         media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+def _mobile_export_suffix(year: int, month: Optional[int], quarter: Optional[int]) -> str:
+    return f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
+
+
+@router.get("/mobile-excel")
+def mobile_excel_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_export_role_deps()),
+):
+    months = [month] if month else _quarter_months(quarter)
+    data = _mobile_summary_data(db, year, months, county, subcounty)
+    fname = f"usajili_mashinani_{year}{_mobile_export_suffix(year, month, quarter)}.xlsx"
+    xlsx = build_mobile_excel_report(data, year, month, quarter)
+    return Response(
+        content=xlsx,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+@router.get("/mobile-pdf")
+def mobile_pdf_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_export_role_deps()),
+):
+    months = [month] if month else _quarter_months(quarter)
+    data = _mobile_summary_data(db, year, months, county, subcounty)
+    fname = f"usajili_mashinani_{year}{_mobile_export_suffix(year, month, quarter)}.pdf"
+    pdf = build_mobile_pdf_report(data, year, month, quarter)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+@router.get("/mobile-word")
+def mobile_word_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(_export_role_deps()),
+):
+    months = [month] if month else _quarter_months(quarter)
+    data = _mobile_summary_data(db, year, months, county, subcounty)
+    fname = f"usajili_mashinani_{year}{_mobile_export_suffix(year, month, quarter)}.docx"
+    docx_bytes = build_mobile_word_report(data, year, month, quarter)
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
