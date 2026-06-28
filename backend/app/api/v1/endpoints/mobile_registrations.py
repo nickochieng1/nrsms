@@ -70,6 +70,28 @@ def create_mobile_registration(
             status_code=400,
             detail="No target has been set for this county and period yet — ask your registrar to set one first",
         )
+    duplicate = (
+        db.query(MobileRegistration)
+        .filter(
+            func.lower(MobileRegistration.county) == body.county.strip().lower(),
+            func.lower(MobileRegistration.subcounty) == body.subcounty.strip().lower(),
+            MobileRegistration.period_month == body.period_month,
+            MobileRegistration.period_year == body.period_year,
+        )
+        .first()
+    )
+    if duplicate:
+        if duplicate.created_by == current_user.id:
+            detail = (
+                f"An exercise for {duplicate.subcounty} in {duplicate.county} already exists for this month "
+                "— open it from the list below and add your data there instead of starting a new one."
+            )
+        else:
+            detail = (
+                f"An exercise for {duplicate.subcounty} in {duplicate.county} already exists for this month, "
+                "created by another clerk — ask your registrar to add you to it or continue the count there."
+            )
+        raise HTTPException(status_code=400, detail=detail)
 
     record = crud_mr.create(db, body, current_user.id)
     meta = get_audit_meta(request)
