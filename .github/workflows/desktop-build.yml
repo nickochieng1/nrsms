@@ -4,10 +4,16 @@ name: Build Desktop App
 # A Windows build can't be produced on a Mac, so this always runs on both
 # platforms via GitHub-hosted runners.
 #
-# - Push a tag like `desktop-v1.0.0` to also create a draft GitHub Release
-#   with both installers attached.
+# - Push a tag like `desktop-v1.0.0` to publish a GitHub Release with both
+#   installers attached, plus a signed update manifest — every already-
+#   installed copy of the app checks this on launch and self-updates.
 # - Or run manually (Actions tab -> Build Desktop App -> Run workflow) to
-#   just get the installers as downloadable build artifacts.
+#   just get the installers as downloadable build artifacts, with no
+#   release/update-feed side effects.
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           the private key from `tauri signer generate`
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (blank string if none was set)
 
 on:
   workflow_dispatch:
@@ -45,10 +51,12 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Build Tauri app (and create draft release on tag push)
+      - name: Build Tauri app (and publish release + update feed on tag push)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: frontend
           tagName: ${{ startsWith(github.ref, 'refs/tags/desktop-v') && github.ref_name || '' }}
@@ -60,8 +68,9 @@ jobs:
               since this isn't code-signed — choose "More info" -> "Run anyway").
             - macOS: download the `.dmg`, drag NRSMS into Applications. Since it isn't
               notarized, right-click the app -> Open the first time instead of double-clicking.
-          releaseDraft: true
-          includeUpdaterJson: false
+            - Already have it installed? It'll find and apply this update on its own next launch.
+          releaseDraft: false
+          includeUpdaterJson: true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
