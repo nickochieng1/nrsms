@@ -259,7 +259,7 @@ export default function MashinaniReportsPage() {
           {/* Registration Volume by County & Subcounty — NPR vs Replacement, Live vs Manual */}
           <div className="card p-0 overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Registration Volume — by County &amp; Subcounty</h2>
+              <h2 className="font-semibold text-gray-900">Registration Volume — by County, Subcounty &amp; Ward</h2>
               <p className="text-xs text-gray-500 mt-0.5">NPR (Initial) vs. Duplicate/Replacement applications, captured Live or Manually</p>
             </div>
             <div className="overflow-x-auto">
@@ -268,6 +268,7 @@ export default function MashinaniReportsPage() {
                   <tr>
                     <th rowSpan={3} className="px-3 py-2 font-medium text-gray-600 text-left align-middle border-r border-gray-200">County</th>
                     <th rowSpan={3} className="px-3 py-2 font-medium text-gray-600 text-left align-middle border-r border-gray-200">Subcounty</th>
+                    <th rowSpan={3} className="px-3 py-2 font-medium text-gray-600 text-left align-middle border-r border-gray-200">Ward</th>
                     <th colSpan={7} className="px-2 py-1.5 font-semibold text-center text-white bg-red-600">LIVE CAPTURE APPLICATIONS</th>
                     <th colSpan={7} className="px-2 py-1.5 font-semibold text-center text-white bg-amber-500 border-l border-gray-300">MANUAL APPLICATIONS</th>
                     <th rowSpan={3} className="px-3 py-2 font-semibold text-gray-700 text-right align-middle border-l border-gray-300 bg-gray-100">Total<br/>Registered</th>
@@ -297,12 +298,13 @@ export default function MashinaniReportsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {mobileSummary.breakdown.length === 0 && (
-                    <tr><td colSpan={17} className="text-center py-8 text-gray-400">No Usajili Mashinani data for this period.</td></tr>
+                    <tr><td colSpan={18} className="text-center py-8 text-gray-400">No Usajili Mashinani data for this period.</td></tr>
                   )}
                   {mobileSummary.breakdown.map((row) => (
-                    <tr key={`${row.county}-${row.subcounty}`} className="hover:bg-gray-50">
+                    <tr key={`${row.county}-${row.subcounty}-${row.ward}`} className="hover:bg-gray-50">
                       <td className="px-3 py-2 font-medium border-r border-gray-100">{row.county}</td>
                       <td className="px-3 py-2 text-gray-500 border-r border-gray-100">{row.subcounty}</td>
+                      <td className="px-3 py-2 text-gray-500 border-r border-gray-100">{row.ward || '—'}</td>
                       <td className="px-2 py-2 text-center text-gray-600">{row.live_npr_male.toLocaleString()}</td>
                       <td className="px-2 py-2 text-center text-gray-600">{row.live_npr_female.toLocaleString()}</td>
                       <td className="px-2 py-2 text-center font-medium text-red-700">{row.live_npr_total.toLocaleString()}</td>
@@ -324,7 +326,7 @@ export default function MashinaniReportsPage() {
                 {mobileSummary.breakdown.length > 0 && (
                   <tfoot>
                     <tr className="bg-slate-700 font-bold text-white text-xs">
-                      <td colSpan={2} className="px-3 py-3">GRAND TOTAL</td>
+                      <td colSpan={3} className="px-3 py-3">GRAND TOTAL</td>
                       <td className="text-center">{mobileSummary.totals.live_npr_male.toLocaleString()}</td>
                       <td className="text-center">{mobileSummary.totals.live_npr_female.toLocaleString()}</td>
                       <td className="text-center text-yellow-300">{mobileSummary.totals.live_npr_total.toLocaleString()}</td>

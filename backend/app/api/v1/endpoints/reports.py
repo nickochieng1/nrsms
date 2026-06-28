@@ -178,6 +178,7 @@ def _mobile_summary_data(
         db.query(
             MobileRegistration.county,
             MobileRegistration.subcounty,
+            MobileRegistrationEntry.ward,
             func.sum(MobileRegistrationEntry.live_npr_male),
             func.sum(MobileRegistrationEntry.live_npr_female),
             func.sum(MobileRegistrationEntry.live_replacement_male),
@@ -194,14 +195,14 @@ def _mobile_summary_data(
         )
         .join(MobileRegistrationEntry, MobileRegistrationEntry.mobile_registration_id == MobileRegistration.id)
         .filter(*base_filter)
-        .group_by(MobileRegistration.county, MobileRegistration.subcounty)
+        .group_by(MobileRegistration.county, MobileRegistration.subcounty, MobileRegistrationEntry.ward)
     )
 
-    def _row(c, sc, lnm, lnf, lrm, lrf, mnm, mnf, mrm, mrf, live, manual, male, female, total) -> dict:
+    def _row(c, sc, ward, lnm, lnf, lrm, lrf, mnm, mnf, mrm, mrf, live, manual, male, female, total) -> dict:
         lnm, lnf, lrm, lrf = int(lnm or 0), int(lnf or 0), int(lrm or 0), int(lrf or 0)
         mnm, mnf, mrm, mrf = int(mnm or 0), int(mnf or 0), int(mrm or 0), int(mrf or 0)
         return {
-            "county": c, "subcounty": sc,
+            "county": c, "subcounty": sc, "ward": ward or "",
             "live_npr_male": lnm, "live_npr_female": lnf, "live_npr_total": lnm + lnf,
             "live_replacement_male": lrm, "live_replacement_female": lrf, "live_replacement_total": lrm + lrf,
             "manual_npr_male": mnm, "manual_npr_female": mnf, "manual_npr_total": mnm + mnf,
@@ -212,7 +213,7 @@ def _mobile_summary_data(
 
     results = sorted(
         [_row(*row) for row in volume_q.all()],
-        key=lambda r: (r["county"], r["subcounty"]),
+        key=lambda r: (r["county"], r["subcounty"], r["ward"]),
     )
 
     county_volume: dict = {}

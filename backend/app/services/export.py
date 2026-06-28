@@ -692,11 +692,11 @@ def build_mobile_excel_report(data: dict, year: int, month: "int | None", quarte
         cell.border = border
         cell.alignment = Alignment(horizontal="left" if ci == 1 else "right", vertical="center")
 
-    # ── Sheet 2: Registration Volume by County & Subcounty ──
+    # ── Sheet 2: Registration Volume by County, Subcounty & Ward ──
     # Mirrors the field template's own breakdown exactly: Live Capture vs Manual,
     # each split into NPR (Initial) and Replacement ("Duplicate") applications, by M/F.
     ws2 = wb.create_sheet("Registration Volume")
-    write_title_block(ws2, "Q")
+    write_title_block(ws2, "R")
 
     def hdr_cell(ws, row, col, value, fill):
         cell = ws.cell(row=row, column=col, value=value)
@@ -706,32 +706,34 @@ def build_mobile_excel_report(data: dict, year: int, month: "int | None", quarte
         cell.border = border
         return cell
 
-    # Row 5: top-level groups (rowspan 3 for County/Subcounty/Total Registered)
+    # Row 5: top-level groups (rowspan 3 for County/Subcounty/Ward/Total Registered)
     ws2.merge_cells("A5:A7"); hdr_cell(ws2, 5, 1, "County", gray_fill)
     ws2.merge_cells("B5:B7"); hdr_cell(ws2, 5, 2, "Subcounty", gray_fill)
-    ws2.merge_cells("C5:I5"); hdr_cell(ws2, 5, 3, "LIVE CAPTURE APPLICATIONS", red_fill)
-    ws2.merge_cells("J5:P5"); hdr_cell(ws2, 5, 10, "MANUAL APPLICATIONS", amber_fill)
-    ws2.merge_cells("Q5:Q7"); hdr_cell(ws2, 5, 17, "TOTAL\nREGISTERED", gray_fill)
+    ws2.merge_cells("C5:C7"); hdr_cell(ws2, 5, 3, "Ward", gray_fill)
+    ws2.merge_cells("D5:J5"); hdr_cell(ws2, 5, 4, "LIVE CAPTURE APPLICATIONS", red_fill)
+    ws2.merge_cells("K5:Q5"); hdr_cell(ws2, 5, 11, "MANUAL APPLICATIONS", amber_fill)
+    ws2.merge_cells("R5:R7"); hdr_cell(ws2, 5, 18, "TOTAL\nREGISTERED", gray_fill)
 
     # Row 6: NPR / Replacement sub-groups (rowspan 2 for the Sub Total columns)
-    ws2.merge_cells("C6:E6"); hdr_cell(ws2, 6, 3, "INITIAL (NPR)", gray_fill)
-    ws2.merge_cells("F6:H6"); hdr_cell(ws2, 6, 6, "OTHERS (REPLACEMENT)", gray_fill)
-    ws2.merge_cells("I6:I7"); hdr_cell(ws2, 6, 9, "SUB\nTOTAL", gray_fill)
-    ws2.merge_cells("J6:L6"); hdr_cell(ws2, 6, 10, "INITIAL (NPR)", gray_fill)
-    ws2.merge_cells("M6:O6"); hdr_cell(ws2, 6, 13, "OTHERS (REPLACEMENT)", gray_fill)
-    ws2.merge_cells("P6:P7"); hdr_cell(ws2, 6, 16, "SUB\nTOTAL", gray_fill)
+    ws2.merge_cells("D6:F6"); hdr_cell(ws2, 6, 4, "INITIAL (NPR)", gray_fill)
+    ws2.merge_cells("G6:I6"); hdr_cell(ws2, 6, 7, "OTHERS (REPLACEMENT)", gray_fill)
+    ws2.merge_cells("J6:J7"); hdr_cell(ws2, 6, 10, "SUB\nTOTAL", gray_fill)
+    ws2.merge_cells("K6:M6"); hdr_cell(ws2, 6, 11, "INITIAL (NPR)", gray_fill)
+    ws2.merge_cells("N6:P6"); hdr_cell(ws2, 6, 14, "OTHERS (REPLACEMENT)", gray_fill)
+    ws2.merge_cells("Q6:Q7"); hdr_cell(ws2, 6, 17, "SUB\nTOTAL", gray_fill)
 
     # Row 7: leaf M/F/T headers
-    for col in (3, 6, 10, 13):
+    for col in (4, 7, 11, 14):
         hdr_cell(ws2, 7, col, "M", gray_fill)
         hdr_cell(ws2, 7, col + 1, "F", gray_fill)
         hdr_cell(ws2, 7, col + 2, "T", gray_fill)
 
     ws2.column_dimensions["A"].width = 18
     ws2.column_dimensions["B"].width = 18
-    for col_letter in ("C","D","E","F","G","H","I","J","K","L","M","N","O","P"):
+    ws2.column_dimensions["C"].width = 18
+    for col_letter in ("D","E","F","G","H","I","J","K","L","M","N","O","P","Q"):
         ws2.column_dimensions[col_letter].width = 7
-    ws2.column_dimensions["Q"].width = 13
+    ws2.column_dimensions["R"].width = 13
     for r in (5, 6, 7):
         ws2.row_dimensions[r].height = 24
 
@@ -740,12 +742,12 @@ def build_mobile_excel_report(data: dict, year: int, month: "int | None", quarte
             cell = ws.cell(row=row_idx, column=ci, value=val)
             cell.font = font
             cell.border = border
-            cell.alignment = Alignment(horizontal="left" if ci <= 2 else "right", vertical="center")
+            cell.alignment = Alignment(horizontal="left" if ci <= 3 else "right", vertical="center")
 
     ri = 8
     for row in data["breakdown"]:
         data_row(ws2, ri, [
-            row["county"], row["subcounty"],
+            row["county"], row["subcounty"], row["ward"],
             row["live_npr_male"], row["live_npr_female"], row["live_npr_total"],
             row["live_replacement_male"], row["live_replacement_female"], row["live_replacement_total"],
             row["live_total"],
@@ -757,7 +759,7 @@ def build_mobile_excel_report(data: dict, year: int, month: "int | None", quarte
         ri += 1
 
     data_row(ws2, ri, [
-        "GRAND TOTAL", "",
+        "GRAND TOTAL", "", "",
         t["live_npr_male"], t["live_npr_female"], t["live_npr_total"],
         t["live_replacement_male"], t["live_replacement_female"], t["live_replacement_total"],
         t["live_total"],
@@ -815,33 +817,33 @@ def build_mobile_pdf_report(data: dict, year: int, month: "int | None", quarter:
     story.append(Table(tbl1, colWidths=[6 * cm, 4 * cm, 4 * cm, 4 * cm], style=TableStyle(style1)))
     story.append(Spacer(1, 0.6 * cm))
 
-    # Table 2: Registration Volume by County & Subcounty — mirrors the field
-    # template's own breakdown: Live Capture vs Manual, each split into NPR
-    # (Initial) and Replacement ("Duplicate") applications, by M/F.
-    story.append(Paragraph("Registration Volume — by County &amp; Subcounty", h2_style))
-    header_row0 = ["County", "Subcounty", "LIVE CAPTURE APPLICATIONS", "", "", "", "", "", "",
+    # Table 2: Registration Volume by County, Subcounty & Ward — mirrors the
+    # field template's own breakdown: Live Capture vs Manual, each split into
+    # NPR (Initial) and Replacement ("Duplicate") applications, by M/F.
+    story.append(Paragraph("Registration Volume — by County, Subcounty &amp; Ward", h2_style))
+    header_row0 = ["County", "Subcounty", "Ward", "LIVE CAPTURE APPLICATIONS", "", "", "", "", "", "",
                    "MANUAL APPLICATIONS", "", "", "", "", "", "", "TOTAL\nREGISTERED"]
-    header_row1 = ["", "", "INITIAL (NPR)", "", "", "OTHERS (REPLACEMENT)", "", "", "SUB\nTOTAL",
+    header_row1 = ["", "", "", "INITIAL (NPR)", "", "", "OTHERS (REPLACEMENT)", "", "", "SUB\nTOTAL",
                    "INITIAL (NPR)", "", "", "OTHERS (REPLACEMENT)", "", "", "SUB\nTOTAL", ""]
-    header_row2 = ["", "", "M", "F", "T", "M", "F", "T", "", "M", "F", "T", "M", "F", "T", "", ""]
+    header_row2 = ["", "", "", "M", "F", "T", "M", "F", "T", "", "M", "F", "T", "M", "F", "T", "", ""]
     tbl2 = [header_row0, header_row1, header_row2]
     style2 = [
-        ("SPAN", (0, 0), (0, 2)), ("SPAN", (1, 0), (1, 2)), ("SPAN", (16, 0), (16, 2)),
-        ("SPAN", (2, 0), (8, 0)), ("SPAN", (9, 0), (15, 0)),
-        ("SPAN", (2, 1), (4, 1)), ("SPAN", (5, 1), (7, 1)), ("SPAN", (8, 1), (8, 2)),
-        ("SPAN", (9, 1), (11, 1)), ("SPAN", (12, 1), (14, 1)), ("SPAN", (15, 1), (15, 2)),
-        ("BACKGROUND", (0, 0), (1, 2), c_gray), ("BACKGROUND", (16, 0), (16, 2), c_gray),
-        ("BACKGROUND", (2, 0), (8, 2), c_red), ("BACKGROUND", (9, 0), (15, 2), c_amber),
+        ("SPAN", (0, 0), (0, 2)), ("SPAN", (1, 0), (1, 2)), ("SPAN", (2, 0), (2, 2)), ("SPAN", (17, 0), (17, 2)),
+        ("SPAN", (3, 0), (9, 0)), ("SPAN", (10, 0), (16, 0)),
+        ("SPAN", (3, 1), (5, 1)), ("SPAN", (6, 1), (8, 1)), ("SPAN", (9, 1), (9, 2)),
+        ("SPAN", (10, 1), (12, 1)), ("SPAN", (13, 1), (15, 1)), ("SPAN", (16, 1), (16, 2)),
+        ("BACKGROUND", (0, 0), (2, 2), c_gray), ("BACKGROUND", (17, 0), (17, 2), c_gray),
+        ("BACKGROUND", (3, 0), (9, 2), c_red), ("BACKGROUND", (10, 0), (16, 2), c_amber),
         ("FONTNAME", (0, 0), (-1, 2), "Times-Bold"),
         ("FONTNAME", (0, 3), (-1, -1), "Times-Roman"), ("FONTSIZE", (0, 0), (-1, -1), 8),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("ALIGN", (0, 3), (1, -1), "LEFT"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"), ("ALIGN", (0, 3), (2, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.5, c_grid),
         ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]
     for row in data["breakdown"]:
         tbl2.append([
-            row["county"], row["subcounty"],
+            row["county"], row["subcounty"], row["ward"],
             row["live_npr_male"], row["live_npr_female"], row["live_npr_total"],
             row["live_replacement_male"], row["live_replacement_female"], row["live_replacement_total"],
             row["live_total"],
@@ -851,7 +853,7 @@ def build_mobile_pdf_report(data: dict, year: int, month: "int | None", quarter:
         ])
     grand_row2 = len(tbl2)
     tbl2.append([
-        "GRAND TOTAL", "",
+        "GRAND TOTAL", "", "",
         t["live_npr_male"], t["live_npr_female"], t["live_npr_total"],
         t["live_replacement_male"], t["live_replacement_female"], t["live_replacement_total"],
         t["live_total"],
@@ -863,7 +865,7 @@ def build_mobile_pdf_report(data: dict, year: int, month: "int | None", quarter:
         ("FONTNAME", (0, grand_row2), (-1, grand_row2), "Times-Bold"),
         ("FONTSIZE", (0, 0), (-1, 2), 7),  # smaller font in the 3 header rows — labels are long
     ]
-    col_w = [2.0 * cm, 2.0 * cm] + [1.0 * cm] * 3 + [1.0 * cm] * 3 + [1.7 * cm] \
+    col_w = [2.0 * cm, 2.0 * cm, 2.0 * cm] + [1.0 * cm] * 3 + [1.0 * cm] * 3 + [1.7 * cm] \
         + [1.0 * cm] * 3 + [1.0 * cm] * 3 + [1.7 * cm] + [2.2 * cm]
     story.append(Table(tbl2, colWidths=col_w, style=TableStyle(style2)))
 
@@ -919,11 +921,11 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
                    align=WD_ALIGN_PARAGRAPH.LEFT if ci == 0 else WD_ALIGN_PARAGRAPH.RIGHT, font_name=_MOBILE_FONT)
 
     doc.add_paragraph()
-    doc.add_paragraph().add_run("Registration Volume — by County & Subcounty").bold = True
+    doc.add_paragraph().add_run("Registration Volume — by County, Subcounty & Ward").bold = True
     # Mirrors the field template's own breakdown: Live Capture vs Manual, each
     # split into NPR (Initial) and Replacement ("Duplicate") applications, by M/F.
     n_data = len(data["breakdown"])
-    table2 = doc.add_table(rows=3 + n_data + 1, cols=17)
+    table2 = doc.add_table(rows=3 + n_data + 1, cols=18)
     table2.style = "Table Grid"
     r0, r1, r2 = table2.rows[0], table2.rows[1], table2.rows[2]
 
@@ -933,33 +935,33 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
     def merge_v(c, r1_idx, r2_idx):
         table2.rows[r1_idx].cells[c].merge(table2.rows[r2_idx].cells[c])
 
-    merge_v(0, 0, 2); merge_v(1, 0, 2); merge_v(16, 0, 2)
-    merge_h(r0, 2, 8); merge_h(r0, 9, 15)
-    merge_h(r1, 2, 4); merge_h(r1, 5, 7); merge_v(8, 1, 2)
-    merge_h(r1, 9, 11); merge_h(r1, 12, 14); merge_v(15, 1, 2)
+    merge_v(0, 0, 2); merge_v(1, 0, 2); merge_v(2, 0, 2); merge_v(17, 0, 2)
+    merge_h(r0, 3, 9); merge_h(r0, 10, 16)
+    merge_h(r1, 3, 5); merge_h(r1, 6, 8); merge_v(9, 1, 2)
+    merge_h(r1, 10, 12); merge_h(r1, 13, 15); merge_v(16, 1, 2)
 
-    for ci, lbl in [(0, "County"), (1, "Subcounty"), (2, "LIVE CAPTURE APPLICATIONS"),
-                    (9, "MANUAL APPLICATIONS"), (16, "TOTAL REGISTERED")]:
+    for ci, lbl in [(0, "County"), (1, "Subcounty"), (2, "Ward"), (3, "LIVE CAPTURE APPLICATIONS"),
+                    (10, "MANUAL APPLICATIONS"), (17, "TOTAL REGISTERED")]:
         _cell_text(r0.cells[ci], lbl, bold=True, size=8, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_MOBILE_FONT)
-    for ci, fill in [(0, _MOBILE_GRAY), (1, _MOBILE_GRAY), (2, _MOBILE_RED), (9, _MOBILE_AMBER), (16, _MOBILE_GRAY)]:
+    for ci, fill in [(0, _MOBILE_GRAY), (1, _MOBILE_GRAY), (2, _MOBILE_GRAY), (3, _MOBILE_RED), (10, _MOBILE_AMBER), (17, _MOBILE_GRAY)]:
         _set_cell_bg(r0.cells[ci], fill)
 
-    for ci, lbl in [(2, "INITIAL (NPR)"), (5, "OTHERS (REPLACEMENT)"), (8, "SUB TOTAL"),
-                    (9, "INITIAL (NPR)"), (12, "OTHERS (REPLACEMENT)"), (15, "SUB TOTAL")]:
+    for ci, lbl in [(3, "INITIAL (NPR)"), (6, "OTHERS (REPLACEMENT)"), (9, "SUB TOTAL"),
+                    (10, "INITIAL (NPR)"), (13, "OTHERS (REPLACEMENT)"), (16, "SUB TOTAL")]:
         _cell_text(r1.cells[ci], lbl, bold=True, size=8, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_MOBILE_FONT)
-    for ci, fill in [(2, _MOBILE_RED), (5, _MOBILE_RED), (8, _MOBILE_RED), (9, _MOBILE_AMBER), (12, _MOBILE_AMBER), (15, _MOBILE_AMBER)]:
+    for ci, fill in [(3, _MOBILE_RED), (6, _MOBILE_RED), (9, _MOBILE_RED), (10, _MOBILE_AMBER), (13, _MOBILE_AMBER), (16, _MOBILE_AMBER)]:
         _set_cell_bg(r1.cells[ci], fill)
 
-    for ci in (2, 5, 9, 12):
+    for ci in (3, 6, 10, 13):
         _cell_text(r2.cells[ci], "M", bold=True, size=8, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_MOBILE_FONT)
         _cell_text(r2.cells[ci + 1], "F", bold=True, size=8, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_MOBILE_FONT)
         _cell_text(r2.cells[ci + 2], "T", bold=True, size=8, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_MOBILE_FONT)
-        fill = _MOBILE_RED if ci < 9 else _MOBILE_AMBER
+        fill = _MOBILE_RED if ci < 10 else _MOBILE_AMBER
         _set_cell_bg(r2.cells[ci], fill); _set_cell_bg(r2.cells[ci + 1], fill); _set_cell_bg(r2.cells[ci + 2], fill)
 
     for ri, row in enumerate(data["breakdown"], start=3):
         vals = [
-            row["county"], row["subcounty"],
+            row["county"], row["subcounty"], row["ward"],
             row["live_npr_male"], row["live_npr_female"], row["live_npr_total"],
             row["live_replacement_male"], row["live_replacement_female"], row["live_replacement_total"],
             row["live_total"],
@@ -968,12 +970,12 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
             row["manual_total"], row["total_registered"],
         ]
         for ci, val in enumerate(vals):
-            align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 1 else WD_ALIGN_PARAGRAPH.RIGHT
+            align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 2 else WD_ALIGN_PARAGRAPH.RIGHT
             _cell_text(table2.rows[ri].cells[ci], f"{val:,}" if isinstance(val, int) else val, size=8, align=align, font_name=_MOBILE_FONT)
 
     grand_idx2 = 3 + n_data
     grand_vals2 = [
-        "GRAND TOTAL", "",
+        "GRAND TOTAL", "", "",
         t["live_npr_male"], t["live_npr_female"], t["live_npr_total"],
         t["live_replacement_male"], t["live_replacement_female"], t["live_replacement_total"],
         t["live_total"],
@@ -982,7 +984,7 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
         t["manual_total"], t["total_registered"],
     ]
     for ci, val in enumerate(grand_vals2):
-        align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 1 else WD_ALIGN_PARAGRAPH.RIGHT
+        align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 2 else WD_ALIGN_PARAGRAPH.RIGHT
         text = f"{val:,}" if isinstance(val, int) else val
         _cell_text(table2.rows[grand_idx2].cells[ci], text, bold=True, size=8, align=align, font_name=_MOBILE_FONT)
 

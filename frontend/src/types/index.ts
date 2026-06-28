@@ -233,6 +233,7 @@ export interface MobileRegistrationTarget {
 export interface MobileSummaryRow {
   county: string
   subcounty: string
+  ward: string
   live_npr_male: number; live_npr_female: number; live_npr_total: number
   live_replacement_male: number; live_replacement_female: number; live_replacement_total: number
   manual_npr_male: number; manual_npr_female: number; manual_npr_total: number
