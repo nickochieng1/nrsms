@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint src --ext ts,tsx"
+    "lint": "eslint src --ext ts,tsx",
+    "tauri": "tauri",
+    "tauri:dev": "cross-env TAURI_BUILD=1 VITE_API_BASE_URL=https://nrsms-46e3.onrender.com/api/v1 tauri dev",
+    "tauri:build": "cross-env TAURI_BUILD=1 VITE_API_BASE_URL=https://nrsms-46e3.onrender.com/api/v1 tauri build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.6.0",
     "@tanstack/react-query": "^5.40.0",
+    "@tauri-apps/api": "^2.11.1",
     "axios": "^1.7.2",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
@@ -23,12 +27,14 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.3",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^7.13.0",
     "@typescript-eslint/parser": "^7.13.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
+    "cross-env": "^10.1.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "postcss": "^8.4.38",

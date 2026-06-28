@@ -1,0 +1,75 @@
+name: Build Desktop App
+
+# Builds the NRSMS desktop app (Tauri) for Windows (.exe/.msi) and macOS (.dmg).
+# A Windows build can't be produced on a Mac, so this always runs on both
+# platforms via GitHub-hosted runners.
+#
+# - Push a tag like `desktop-v1.0.0` to also create a draft GitHub Release
+#   with both installers attached.
+# - Or run manually (Actions tab -> Build Desktop App -> Run workflow) to
+#   just get the installers as downloadable build artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'desktop-v*'
+
+env:
+  # Baked into the desktop build so it talks to the deployed backend directly
+  # (there's no Netlify-style proxy inside a packaged desktop app).
+  VITE_API_BASE_URL: https://nrsms-46e3.onrender.com/api/v1
+  TAURI_BUILD: '1'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build Tauri app (and create draft release on tag push)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: frontend
+          tagName: ${{ startsWith(github.ref, 'refs/tags/desktop-v') && github.ref_name || '' }}
+          releaseName: 'NRSMS Desktop ${{ github.ref_name }}'
+          releaseBody: |
+            Desktop build of the National Registration Statistics Management System.
+
+            - Windows: download and run the `.msi` or `.exe` installer (SmartScreen may warn
+              since this isn't code-signed — choose "More info" -> "Run anyway").
+            - macOS: download the `.dmg`, drag NRSMS into Applications. Since it isn't
+              notarized, right-click the app -> Open the first time instead of double-clicking.
+          releaseDraft: true
+          includeUpdaterJson: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nrsms-desktop-${{ matrix.platform }}
+          path: |
+            frontend/src-tauri/target/release/bundle/**/*.dmg
+            frontend/src-tauri/target/release/bundle/**/*.app
+            frontend/src-tauri/target/release/bundle/**/*.msi
+            frontend/src-tauri/target/release/bundle/**/*.exe
+          if-no-files-found: ignore

@@ -30,7 +30,7 @@ function _buildUrl(
   if (station_id) params.set('station_id', String(station_id))
   if (county)     params.set('county',     county)
   if (region)     params.set('region',     region)
-  return `/api/v1/reports/${path}?${params}`
+  return `${apiClient.defaults.baseURL}/reports/${path}?${params}`
 }
 
 export const getExcelReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
@@ -71,7 +71,7 @@ function _buildMobileUrl(
   if (quarter)   params.set('quarter',   String(quarter))
   if (county)    params.set('county',    county)
   if (subcounty) params.set('subcounty', subcounty)
-  return `/api/v1/reports/${path}?${params}`
+  return `${apiClient.defaults.baseURL}/reports/${path}?${params}`
 }
 
 export const getMobileExcelReportUrl = (year: number, month?: number, quarter?: number, county?: string, subcounty?: string) =>
