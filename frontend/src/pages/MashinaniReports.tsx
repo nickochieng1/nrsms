@@ -43,7 +43,7 @@ export default function MashinaniReportsPage() {
     // polling while the page is left open so newly entered days show up
     // without the registrar needing to navigate away and back.
     refetchOnMount: 'always',
-    refetchInterval: 30 * 1000,
+    refetchInterval: 10 * 1000,
   })
 
   // Subcounty options — always unfiltered by subcounty itself, so picking a

@@ -303,6 +303,8 @@ function CountyTargetsPanel({ year, isRegistrar }: { year: number; isRegistrar: 
   const { data: targets, isLoading } = useQuery({
     queryKey: ['mobile-registration-targets', year],
     queryFn: () => getMobileRegistrationTargets(year),
+    refetchOnMount: 'always',
+    refetchInterval: 10 * 1000,
   })
 
   const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations, enabled: isRegistrar })
@@ -455,6 +457,8 @@ function DirectorMashinaniDashboard() {
   const { data: summary, isLoading } = useQuery({
     queryKey: ['report', 'mobile-summary', year, month],
     queryFn: () => getMobileSummary(year, month ? Number(month) : undefined),
+    refetchOnMount: 'always',
+    refetchInterval: 10 * 1000,
   })
 
   const periodLabel = month ? `${MONTH_NAMES[Number(month) - 1]} ${year}` : `Full Year ${year}`
@@ -602,6 +606,11 @@ function ClerkRegistrarMashinaniView() {
       county: countyFilter || undefined, subcounty: subcountyFilter || undefined,
       limit: 200,
     }),
+    // Clerk and registrar are normally on separate machines/sessions, so this
+    // list needs to refresh on its own rather than rely on cache invalidation
+    // from a save that happened in a different session.
+    refetchOnMount: 'always',
+    refetchInterval: 10 * 1000,
   })
 
   const { data: filterStations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
