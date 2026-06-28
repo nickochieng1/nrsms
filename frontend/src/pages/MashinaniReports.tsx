@@ -37,6 +37,13 @@ export default function MashinaniReportsPage() {
   const { data: mobileSummary, isLoading } = useQuery({
     queryKey: ['report', 'mobile-summary', year, quarter, month, mashinaniCounty, mashinaniSubcounty],
     queryFn: () => getMobileSummary(year, month, quarter, mashinaniCounty || undefined, mashinaniSubcounty || undefined),
+    // Clerks and the registrar are typically on separate machines/sessions, so
+    // cache invalidation on save doesn't reach this page — always refetch on
+    // mount/visit instead of serving up to a minute of stale totals, and keep
+    // polling while the page is left open so newly entered days show up
+    // without the registrar needing to navigate away and back.
+    refetchOnMount: 'always',
+    refetchInterval: 30 * 1000,
   })
 
   // Subcounty options — always unfiltered by subcounty itself, so picking a

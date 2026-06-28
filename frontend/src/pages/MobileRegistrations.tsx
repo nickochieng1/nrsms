@@ -88,6 +88,7 @@ function EntriesEditor({
       } as Partial<MobileRegistration>),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mobile-registrations'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
       onClose()
     },
   })
@@ -313,6 +314,7 @@ function CountyTargetsPanel({ year, isRegistrar }: { year: number; isRegistrar: 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mobile-registration-targets'] })
       qc.invalidateQueries({ queryKey: ['mobile-registrations'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
       setEditing(null)
       setShowAddForm(false)
       setNewCounty(''); setNewTarget(0)
@@ -625,6 +627,7 @@ function ClerkRegistrarMashinaniView() {
     } as Partial<MobileRegistration>),
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['mobile-registrations'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
       setShowNewForm(false)
       setNewCounty(''); setNewSubcounty('')
       setExpandedId(created.id)
@@ -633,12 +636,18 @@ function ClerkRegistrarMashinaniView() {
 
   const closeMutation = useMutation({
     mutationFn: (id: number) => closeMobileRegistration(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mobile-registrations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mobile-registrations'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
+    },
   })
 
   const reopenMutation = useMutation({
     mutationFn: (id: number) => reopenMobileRegistration(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['mobile-registrations'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mobile-registrations'] })
+      qc.invalidateQueries({ queryKey: ['report'] })
+    },
   })
 
   function handleRowClick(rec: MobileRegistration) {
