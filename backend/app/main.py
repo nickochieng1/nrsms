@@ -39,6 +39,7 @@ def on_startup():
 
 def _seed_superuser():
     from sqlalchemy.orm import Session
+    from app.core.security import get_password_hash
     from app.crud import user as crud_user
     from app.models.user import UserRole
     from app.schemas.user import UserCreate
@@ -48,15 +49,22 @@ def _seed_superuser():
         if not existing:
             crud_user.create(db, UserCreate(
                 full_name="System Administrator",
-                username="admin",
+                username="Administrator",
                 email=settings.FIRST_SUPERUSER_EMAIL,
                 password=settings.FIRST_SUPERUSER_PASSWORD,
                 role=UserRole.ADMIN,
             ))
-        elif not existing.username:
-            admin_owner = crud_user.get_by_username(db, "admin")
-            if admin_owner is None or admin_owner.id == existing.id:
-                existing.username = "admin"
+        elif existing.username != "Administrator":
+            # One-time fixup: the superuser was originally seeded as "admin"
+            # with whatever FIRST_SUPERUSER_PASSWORD was at the time — bumping
+            # that env var later never touched the already-created account.
+            # Move it to the username/password NRB actually wants once; once
+            # the username matches, this is a no-op on every later deploy, so
+            # it won't keep clobbering a password someone changes afterward.
+            taken_by = crud_user.get_by_username(db, "Administrator")
+            if taken_by is None:
+                existing.username = "Administrator"
+                existing.hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
                 db.commit()
 
 

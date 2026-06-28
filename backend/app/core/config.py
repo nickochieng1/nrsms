@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     FIRST_SUPERUSER_EMAIL: str = "admin@nrsms.go.ke"
-    FIRST_SUPERUSER_PASSWORD: str = "changeme123"
+    FIRST_SUPERUSER_PASSWORD: str = "Internal"
 
     class Config:
         env_file = ".env"
