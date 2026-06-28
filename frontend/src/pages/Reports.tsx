@@ -5,6 +5,7 @@ import {
 } from '@/api/reports'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
+import { downloadFile } from '@/utils/downloadFile'
 import { NRB_CATS, CAT_LABELS, CAT_COLORS, MODULE_LABELS, MODULE_COLORS } from '@/types'
 import type { ModulePrefix } from '@/types'
 
@@ -87,7 +88,6 @@ export default function ReportsPage() {
     Uncollected: (m['uncollected_total'] as number) ?? 0,
   })) ?? []
 
-  const token = localStorage.getItem('token')
   const isModuleTab = activeTab === 'app' || activeTab === 'ids' || activeTab === 'rej'
 
   const TABS: [DetailTab, string][] = [
@@ -97,19 +97,6 @@ export default function ReportsPage() {
     ['collected', 'Collected / Uncollected'],
     ['registers', 'Registers'],
   ]
-
-  function downloadFile(url: string, filename: string) {
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: filename,
-        })
-        a.click()
-        URL.revokeObjectURL(a.href)
-      })
-  }
 
   const FORMAT_OPTS = [
     { value: 'excel', label: 'Excel (.xlsx)', ext: 'xlsx', directorOnly: false },

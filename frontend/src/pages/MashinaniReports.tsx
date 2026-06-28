@@ -4,6 +4,7 @@ import {
   getMobileSummary, getMobileExcelReportUrl, getMobilePdfReportUrl, getMobileWordReportUrl,
 } from '@/api/reports'
 import { getStations } from '@/api/stations'
+import { downloadFile } from '@/utils/downloadFile'
 
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December']
@@ -51,20 +52,6 @@ export default function MashinaniReportsPage() {
   }
 
   const periodLabel = month ? `${MONTH_NAMES[month - 1]} ${year}` : quarter ? QUARTER_LABELS[quarter] : `Full Year ${year}`
-
-  function downloadFile(url: string, filename: string) {
-    const token = localStorage.getItem('token')
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: filename,
-        })
-        a.click()
-        URL.revokeObjectURL(a.href)
-      })
-  }
 
   function handleExportSelect(fmt: 'excel' | 'pdf' | 'word') {
     const urlFn = fmt === 'excel' ? getMobileExcelReportUrl : fmt === 'pdf' ? getMobilePdfReportUrl : getMobileWordReportUrl
