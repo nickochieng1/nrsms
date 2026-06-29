@@ -216,6 +216,40 @@ def _mobile_summary_data(
         key=lambda r: (r["county"], r["subcounty"], r["ward"]),
     )
 
+    # Daily Report — NPR by Age Band: one figure per month per exercise
+    # (not per entry/ward), captured directly on MobileRegistration.
+    age_q = (
+        db.query(
+            MobileRegistration.county,
+            MobileRegistration.subcounty,
+            func.sum(MobileRegistration.age_25_40_male),
+            func.sum(MobileRegistration.age_25_40_female),
+            func.sum(MobileRegistration.age_41_60_male),
+            func.sum(MobileRegistration.age_41_60_female),
+            func.sum(MobileRegistration.age_60_plus_male),
+            func.sum(MobileRegistration.age_60_plus_female),
+        )
+        .filter(*base_filter)
+        .group_by(MobileRegistration.county, MobileRegistration.subcounty)
+    )
+
+    def _age_row(c, sc, a1m, a1f, a2m, a2f, a3m, a3f) -> dict:
+        a1m, a1f = int(a1m or 0), int(a1f or 0)
+        a2m, a2f = int(a2m or 0), int(a2f or 0)
+        a3m, a3f = int(a3m or 0), int(a3f or 0)
+        return {
+            "county": c, "subcounty": sc,
+            "age_25_40_male": a1m, "age_25_40_female": a1f, "age_25_40_total": a1m + a1f,
+            "age_41_60_male": a2m, "age_41_60_female": a2f, "age_41_60_total": a2m + a2f,
+            "age_60_plus_male": a3m, "age_60_plus_female": a3f, "age_60_plus_total": a3m + a3f,
+            "age_grand_total": a1m + a1f + a2m + a2f + a3m + a3f,
+        }
+
+    age_breakdown = sorted(
+        [_age_row(*row) for row in age_q.all()],
+        key=lambda r: (r["county"], r["subcounty"]),
+    )
+
     county_volume: dict = {}
     for r in results:
         county_volume.setdefault(r["county"], 0)
@@ -268,7 +302,18 @@ def _mobile_summary_data(
         round((totals["total_registered"] / totals["target_set"]) * 100, 1) if totals["target_set"] else 0.0
     )
 
-    return {"breakdown": results, "county_totals": county_totals, "totals": totals}
+    age_sum_field = lambda key: sum(r[key] for r in age_breakdown)  # noqa: E731
+    totals.update({
+        "age_25_40_male": age_sum_field("age_25_40_male"), "age_25_40_female": age_sum_field("age_25_40_female"),
+        "age_25_40_total": age_sum_field("age_25_40_total"),
+        "age_41_60_male": age_sum_field("age_41_60_male"), "age_41_60_female": age_sum_field("age_41_60_female"),
+        "age_41_60_total": age_sum_field("age_41_60_total"),
+        "age_60_plus_male": age_sum_field("age_60_plus_male"), "age_60_plus_female": age_sum_field("age_60_plus_female"),
+        "age_60_plus_total": age_sum_field("age_60_plus_total"),
+        "age_grand_total": age_sum_field("age_grand_total"),
+    })
+
+    return {"breakdown": results, "county_totals": county_totals, "totals": totals, "age_breakdown": age_breakdown}
 
 
 @router.get("/mobile-summary")
