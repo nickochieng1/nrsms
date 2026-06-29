@@ -100,7 +100,7 @@ class MobileRegistrationUpdate(BaseModel):
 
 class MobileRegistrationOut(MobileRegistrationBase):
     id: int
-    created_by: int
+    created_by: Optional[int] = None
     created_by_name: Optional[str] = None
     is_closed: bool
     closed_at: Optional[datetime] = None

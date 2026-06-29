@@ -34,6 +34,7 @@ def on_startup():
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
     _migrate_audit_log_schema()
+    _migrate_fk_nullability()
     _seed_superuser()
     _seed_stations()
 
@@ -256,6 +257,29 @@ def _migrate_audit_log_schema():
             UPDATE audit_logs SET actor_role = LOWER(actor_role)
             WHERE actor_role IS NOT NULL AND actor_role <> LOWER(actor_role)
         """))
+        conn.commit()
+
+
+def _migrate_fk_nullability():
+    """mobile_registrations.created_by and submissions.submitted_by were
+    originally NOT NULL, which meant delete_user's FK null-out could never
+    cover them — deleting any clerk/registrar who had ever created a
+    submission or Usajili Mashinani exercise hit an unhandled
+    ForeignKeyViolation (500). The models are now Optional; this drops the
+    matching DB-level constraint on an already-existing table (create_all()
+    doesn't retrofit column constraints, only missing tables/columns).
+
+    Postgres-only: SQLite can't drop a NOT NULL constraint without a full
+    table rebuild, and this project treats local SQLite as disposable dev
+    state (delete nrsms.db and let create_all() rebuild it with the new
+    model if this matters for local testing).
+    """
+    from sqlalchemy import text
+    if settings.DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE mobile_registrations ALTER COLUMN created_by DROP NOT NULL"))
+        conn.execute(text("ALTER TABLE submissions ALTER COLUMN submitted_by DROP NOT NULL"))
         conn.commit()
 
 

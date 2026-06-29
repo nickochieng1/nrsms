@@ -24,6 +24,7 @@ export default function UsersPage() {
   const { user: currentUser, isAdmin } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [resetModal, setResetModal] = useState<{ id: number; name: string } | null>(null)
   const [resetPassword, setResetPassword] = useState('')
   const [resetError, setResetError] = useState<string | null>(null)
@@ -67,6 +68,10 @@ export default function UsersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
       setDeleteConfirm(null)
+      setDeleteError(null)
+    },
+    onError: (err: any) => {
+      setDeleteError(err.response?.data?.detail ?? 'Failed to delete user. Please try again.')
     },
   })
 
@@ -232,7 +237,7 @@ export default function UsersPage() {
                           </button>
                           {u.id !== currentUser?.id && (
                             <button
-                              onClick={() => setDeleteConfirm(u.id)}
+                              onClick={() => { setDeleteConfirm(u.id); setDeleteError(null) }}
                               className="text-xs text-red-500 hover:text-red-700"
                             >
                               Delete
@@ -287,6 +292,7 @@ export default function UsersPage() {
             <p className="text-sm text-gray-500 mb-5">
               This will permanently remove the user. This action cannot be undone.
             </p>
+            {deleteError && <p className="text-xs text-red-600 mb-3">{deleteError}</p>}
             <div className="flex gap-3">
               <button
                 onClick={() => deleteMutation.mutate(deleteConfirm)}
@@ -295,7 +301,7 @@ export default function UsersPage() {
               >
                 {deleteMutation.isPending ? 'Deleting…' : 'Yes, Delete'}
               </button>
-              <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">
+              <button onClick={() => { setDeleteConfirm(null); setDeleteError(null) }} className="btn-secondary flex-1">
                 Cancel
               </button>
             </div>

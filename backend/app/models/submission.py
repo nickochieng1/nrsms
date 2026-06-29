@@ -32,7 +32,9 @@ class Submission(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     station_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"))
-    submitted_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+    # Nullable so deleting the submitter's account doesn't have to cascade —
+    # delete_user nulls this out instead of being blocked by the FK.
+    submitted_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     reviewed_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     period_month: Mapped[int] = mapped_column(Integer)
     period_year: Mapped[int] = mapped_column(Integer)
@@ -206,7 +208,7 @@ class Submission(Base):
 
     # ── Relationships ──────────────────────────────────────────────────
     station: Mapped["Station"] = relationship("Station", back_populates="submissions")
-    submitted_by_user: Mapped["User"] = relationship(
+    submitted_by_user: Mapped[Optional["User"]] = relationship(
         "User", back_populates="submissions", foreign_keys=[submitted_by]
     )
     reviewed_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewed_by])

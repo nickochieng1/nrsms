@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_audit_meta, get_current_user, require_role
 from app.core.security import get_password_hash
 from app.crud import user as crud_user
-from app.db.session import engine, get_db
+from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.submission import Submission
 from app.models.user import User, UserRole
@@ -134,12 +134,17 @@ def delete_user(
     meta = get_audit_meta(request)
     audit_svc.log(db, user_id=current_user.id, action="DELETE", resource="user", resource_id=user_id,
                   old_value={"email": user.email, "role": user.role}, **meta)
+    # Null out every FK reference first so the delete below never hits a
+    # foreign-key violation, on SQLite or Postgres alike. Reuses the same
+    # session/connection audit_svc.log() just committed on, rather than
+    # opening a second connection, to keep this from being any slower than
+    # it has to be against a remote database.
+    db.execute(text("UPDATE submissions SET reviewed_by=NULL WHERE reviewed_by=:uid"), {"uid": user_id})
+    db.execute(text("UPDATE submissions SET submitted_by=NULL WHERE submitted_by=:uid"), {"uid": user_id})
+    db.execute(text("UPDATE mobile_registrations SET created_by=NULL WHERE created_by=:uid"), {"uid": user_id})
+    db.execute(text("UPDATE mobile_registrations SET closed_by=NULL WHERE closed_by=:uid"), {"uid": user_id})
+    db.execute(text("UPDATE mobile_registration_targets SET set_by=NULL WHERE set_by=:uid"), {"uid": user_id})
+    db.execute(text("UPDATE audit_logs SET user_id=NULL WHERE user_id=:uid"), {"uid": user_id})
+    db.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": user_id})
     db.commit()
-    with engine.connect() as conn:
-        # Null out FK references first so the delete below never hits a
-        # foreign-key violation, on SQLite or Postgres alike.
-        conn.execute(text("UPDATE submissions SET reviewed_by=NULL WHERE reviewed_by=:uid"), {"uid": user_id})
-        conn.execute(text("UPDATE audit_logs SET user_id=NULL WHERE user_id=:uid"), {"uid": user_id})
-        conn.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": user_id})
-        conn.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -184,7 +184,7 @@ class SubmissionReview(BaseModel):
 class SubmissionOut(SubmissionBase):
     id: int
     station_id: int
-    submitted_by: int
+    submitted_by: Optional[int] = None
     reviewed_by: Optional[int] = None
     status: SubmissionStatus
     # Computed totals — module 1

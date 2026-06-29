@@ -38,7 +38,9 @@ class MobileRegistration(Base):
 
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+    # Nullable so deleting the creator's account doesn't have to cascade —
+    # delete_user nulls this out instead of being blocked by the FK.
+    created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -65,7 +67,7 @@ class MobileRegistration(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
-    created_by_user: Mapped["User"] = relationship("User", foreign_keys=[created_by])
+    created_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])
     closed_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[closed_by])
     entries: Mapped[List["MobileRegistrationEntry"]] = relationship(
         "MobileRegistrationEntry",
