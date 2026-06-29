@@ -143,13 +143,39 @@ export interface Submission {
 export interface AuditLog {
   id: number
   user_id: number | null
+  actor_name: string | null
+  actor_username: string | null
+  actor_role: string | null
   action: string
   resource: string
   resource_id: number | null
-  old_value: string | null
-  new_value: string | null
+  old_value: Record<string, any> | null
+  new_value: Record<string, any> | null
   ip_address: string | null
+  user_agent: string | null
   timestamp: string
+}
+
+export interface AuditLogPage {
+  items: AuditLog[]
+  total: number
+}
+
+export interface AuditActor {
+  user_id: number | null
+  actor_name: string | null
+  actor_username: string | null
+  actor_role: string | null
+  event_count: number
+  last_active: string | null
+}
+
+export interface AuditStats {
+  total: number
+  distinct_actors: number
+  by_action: { action: string; count: number }[]
+  by_resource: { resource: string; count: number }[]
+  top_actors: { user_id: number | null; actor_name: string | null; actor_username: string | null; count: number }[]
 }
 
 export interface MonthlyData {

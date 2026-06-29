@@ -15,8 +15,17 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
-    action: Mapped[str] = mapped_column(String(100))
-    resource: Mapped[str] = mapped_column(String(100))
+
+    # Snapshot of the actor's identity at the moment of the action — kept
+    # independent of the `user_id` FK so the log stays meaningful forever,
+    # even after the account is deleted (delete_user nulls out user_id to
+    # satisfy the FK, but these columns are never touched).
+    actor_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    actor_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    action: Mapped[str] = mapped_column(String(100), index=True)
+    resource: Mapped[str] = mapped_column(String(100), index=True)
     resource_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

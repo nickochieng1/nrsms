@@ -33,6 +33,7 @@ app.include_router(api_router)
 def on_startup():
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
+    _migrate_audit_log_schema()
     _seed_superuser()
     _seed_stations()
 
@@ -208,6 +209,52 @@ def _migrate_schema():
             WHERE role = 'clerk'
               AND region IS NULL
               AND station_id IS NOT NULL
+        """))
+        conn.commit()
+
+
+def _migrate_audit_log_schema():
+    """Add the actor-identity snapshot columns to audit_logs and backfill
+    them for existing rows. Unlike _migrate_schema() above, this runs on
+    every database (Postgres included) — audit_logs already existed in
+    production before these columns were added, so create_all() alone
+    won't retrofit them onto the live table.
+    """
+    from sqlalchemy import text
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+    with engine.connect() as conn:
+        if is_sqlite:
+            for col in ("actor_name VARCHAR(200)", "actor_username VARCHAR(100)", "actor_role VARCHAR(50)"):
+                try:
+                    conn.execute(text(f"ALTER TABLE audit_logs ADD COLUMN {col}"))
+                    conn.commit()
+                except Exception:
+                    pass
+        else:
+            for col in ("actor_name VARCHAR(200)", "actor_username VARCHAR(100)", "actor_role VARCHAR(50)"):
+                conn.execute(text(f"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS {col}"))
+            conn.commit()
+
+        # Best-effort backfill from the live users table — only recovers
+        # identity for entries whose user_id FK hasn't already been nulled
+        # out (e.g. by a since-deleted account); anything already nulled
+        # has no name to recover and stays "Unknown user" in the UI.
+        # LOWER() on the role: Postgres' native enum column stores the
+        # member NAME ("ADMIN"), but the app snapshots .value ("admin")
+        # going forward — normalize so both forms match the same casing.
+        # (Postgres needs an explicit ::text cast — LOWER() doesn't accept
+        # a native enum type directly; SQLite's role column is plain text.)
+        role_expr = "LOWER(role::text)" if not is_sqlite else "LOWER(role)"
+        conn.execute(text(f"""
+            UPDATE audit_logs
+            SET actor_name = (SELECT full_name FROM users WHERE users.id = audit_logs.user_id),
+                actor_username = (SELECT username FROM users WHERE users.id = audit_logs.user_id),
+                actor_role = (SELECT {role_expr} FROM users WHERE users.id = audit_logs.user_id)
+            WHERE user_id IS NOT NULL AND actor_name IS NULL
+        """))
+        conn.execute(text("""
+            UPDATE audit_logs SET actor_role = LOWER(actor_role)
+            WHERE actor_role IS NOT NULL AND actor_role <> LOWER(actor_role)
         """))
         conn.commit()
 

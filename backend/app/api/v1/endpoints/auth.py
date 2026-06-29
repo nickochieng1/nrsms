@@ -19,12 +19,16 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                             detail="Provide username or email")
     user = crud_user.authenticate(db, credential, body.password)
+    meta = get_audit_meta(request)
     if not user:
+        audit_svc.log(db, user_id=None, action="FAILED_LOGIN", resource="user",
+                       actor_label=credential, new_value={"reason": "invalid_credentials"}, **meta)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     if not user.is_active:
+        audit_svc.log(db, user_id=user.id, action="FAILED_LOGIN", resource="user", resource_id=user.id,
+                       new_value={"reason": "inactive_account"}, **meta)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
 
-    meta = get_audit_meta(request)
     audit_svc.log(db, user_id=user.id, action="LOGIN", resource="user", resource_id=user.id, **meta)
     return {"access_token": create_access_token(user.id)}
 
