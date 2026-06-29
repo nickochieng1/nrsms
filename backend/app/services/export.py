@@ -30,15 +30,14 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 # ── Palette ───────────────────────────────────────────────────────────────────
-_DARK_BLUE    = "1F4E79"
-_MID_BLUE     = "2E75B6"
-_REGION_BG    = "BF338C"   # magenta — matches the screenshot
-_REGION_FG    = "FFFFFF"
-_TOTAL_ROW_BG = "D9D9D9"
-_HEADER_BG    = "1F4E79"
-_HEADER_FG    = "FFFFFF"
-_ALT_BG       = "EBF3FB"
-_WHITE        = "FFFFFF"
+# Shared across every NRB report (general + Usajili Mashinani) for a uniform
+# look: plain bold/no-fill headers, RED for the row that introduces a group
+# (region or county heading), YELLOW for the row that closes it with a sum
+# (TOTAL / GRAND TOTAL) — matching NRB's own stats.xlsx convention rather
+# than an invented color scheme.
+_NRB_FONT   = "Times New Roman"
+_NRB_RED    = "FF0000"
+_NRB_YELLOW = "FFFF00"
 
 # ── Module definitions ────────────────────────────────────────────────────────
 NRB_CATS = ("npr", "replacements", "changes", "duplicates", "type4", "type5")
@@ -140,6 +139,42 @@ def _module_table_rows(
     return rows
 
 
+def _general_narrative(data: dict, period: str) -> list[str]:
+    """Plain-English summary, one paragraph per module — the same figures
+    as the tables, in words, for when a written summary is needed."""
+    pct = lambda n, d: round((n / d) * 100, 1) if d else 0.0  # noqa: E731
+    lines = []
+    for prefix, module_title in MODULES:
+        rows = _module_table_rows(data.get(prefix, {}))
+        grand = next((r for r in rows if r["_type"] == "grand"), None)
+        if not grand:
+            continue
+        npr_total = grand["npr_m"] + grand["npr_f"]
+        oth_total = grand["oth_m"] + grand["oth_f"]
+        total = npr_total + oth_total
+        if total == 0:
+            lines.append(f"No {module_title.lower()} were recorded for {period}.")
+            continue
+        male_total = grand["npr_m"] + grand["oth_m"]
+        female_total = grand["npr_f"] + grand["oth_f"]
+        sentence = (
+            f"For {module_title.lower()} during {period}, a total of {total:,} were recorded, "
+            f"comprising {npr_total:,} ({pct(npr_total, total):.1f}%) NPR and {oth_total:,} "
+            f"({pct(oth_total, total):.1f}%) other categories (replacements, changes, duplicates, "
+            f"type 4 and type 5). Of these, {male_total:,} ({pct(male_total, total):.1f}%) were male "
+            f"and {female_total:,} ({pct(female_total, total):.1f}%) were female."
+        )
+        regions = [r for r in rows if r["_type"] == "subtotal"]
+        if regions:
+            ranked = sorted(regions, key=lambda r: r["npr_m"] + r["npr_f"] + r["oth_m"] + r["oth_f"], reverse=True)
+            top = ranked[0]
+            top_total = top["npr_m"] + top["npr_f"] + top["oth_m"] + top["oth_f"]
+            top_name = top["label"].replace(" REGION TOTALS", "")
+            sentence += f" {top_name} Region recorded the highest volume at {top_total:,}."
+        lines.append(sentence)
+    return lines
+
+
 # ── Excel ──────────────────────────────────────────────────────────────────────
 
 def _xl_cell_style(ws, row, col, value, fill=None, font=None, align="center", border=None):
@@ -163,35 +198,58 @@ def build_excel_report(
     wb = Workbook()
     wb.remove(wb.active)  # remove default sheet
 
-    thin = Side(style="thin", color="BBBBBB")
-    med  = Side(style="medium", color="888888")
-    border_thin = Border(left=thin, right=thin, top=thin, bottom=thin)
-    border_med  = Border(left=med,  right=med,  top=med,  bottom=med)
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    hdr_fill     = PatternFill(start_color=_HEADER_BG,  end_color=_HEADER_BG,  fill_type="solid")
-    region_fill  = PatternFill(start_color=_REGION_BG,  end_color=_REGION_BG,  fill_type="solid")
-    sub_fill     = PatternFill(start_color=_TOTAL_ROW_BG,end_color=_TOTAL_ROW_BG,fill_type="solid")
-    grand_fill   = PatternFill(start_color="595959",    end_color="595959",    fill_type="solid")
-    alt_fill     = PatternFill(start_color=_ALT_BG,     end_color=_ALT_BG,     fill_type="solid")
+    red_fill    = PatternFill(start_color=_NRB_RED,    end_color=_NRB_RED,    fill_type="solid")
+    yellow_fill = PatternFill(start_color=_NRB_YELLOW, end_color=_NRB_YELLOW, fill_type="solid")
 
-    hdr_font     = Font(bold=True, color=_HEADER_FG, size=9)
-    region_font  = Font(bold=True, color=_REGION_FG, size=9)
-    sub_font     = Font(bold=True, size=9)
-    grand_font   = Font(bold=True, color="FFFFFF", size=9)
-    data_font    = Font(size=9)
+    title_font     = Font(name=_NRB_FONT, bold=True, size=14)
+    subtitle_font  = Font(name=_NRB_FONT, bold=True, size=12)
+    narrative_hdr_font = Font(name=_NRB_FONT, bold=True, size=13)
+    narrative_font = Font(name=_NRB_FONT, size=12)
+    hdr_font     = Font(name=_NRB_FONT, bold=True, size=9)
+    region_font  = Font(name=_NRB_FONT, bold=True, size=9)
+    sub_font     = Font(name=_NRB_FONT, bold=True, size=9)
+    grand_font   = Font(name=_NRB_FONT, bold=True, size=10)
+    data_font    = Font(name=_NRB_FONT, size=9)
 
     period = _period_label(year, month)
-    COLS = ["LIST OF COUNTIES", "M", "F", "TOTAL", "M", "F", "TOTAL", "GRAND\nTOTAL"]
+    pct = lambda n, d: round((n / d) * 100, 1) if d else 0.0  # noqa: E731
+    COLS = ["LIST OF COUNTIES", "M", "F", "TOTAL", "M", "F", "TOTAL", "GRAND\nTOTAL", "% OF\nTOTAL"]
+
+    # ── Sheet 0: Summary ──
+    ws0 = wb.create_sheet("Summary")
+    ws0.merge_cells("A1:I1")
+    c = ws0.cell(row=1, column=1, value="NATIONAL REGISTRATION BUREAU")
+    c.font = title_font
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws0.merge_cells("A2:I2")
+    c = ws0.cell(row=2, column=1, value=f"{title} — {period}")
+    c.font = subtitle_font
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws0.merge_cells("A4:I4")
+    c = ws0.cell(row=4, column=1, value="NARRATIVE SUMMARY")
+    c.font = narrative_hdr_font
+    ri = 6
+    for line in _general_narrative(data, period):
+        ws0.merge_cells(f"A{ri}:I{ri}")
+        c = ws0.cell(row=ri, column=1, value=line)
+        c.font = narrative_font
+        c.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        ws0.row_dimensions[ri].height = 45
+        ri += 2
+    for col_letter in ("A","B","C","D","E","F","G","H","I"):
+        ws0.column_dimensions[col_letter].width = 16
 
     for prefix, module_title in MODULES:
         ws = wb.create_sheet(title=module_title[:31])
         ws.sheet_view.showGridLines = False
 
         # ── Row 1: Report title ──
-        ws.merge_cells("A1:H1")
+        ws.merge_cells("A1:I1")
         c = ws.cell(row=1, column=1, value=f"{module_title} FROM {period}")
-        c.font = Font(bold=True, size=12, color=_HEADER_FG)
-        c.fill = hdr_fill
+        c.font = title_font
         c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 24
 
@@ -201,41 +259,43 @@ def build_excel_report(
         # ── Row 3: Group headers ──
         ws.merge_cells("B3:D3")
         ws.merge_cells("E3:G3")
-        for col, label, clr in [
-            (2, "NPR",        "2E75B6"),
-            (5, "DUP/OTHERS", "70AD47"),
-        ]:
+        for col, label in [(2, "NPR"), (5, "DUP/OTHERS")]:
             c = ws.cell(row=3, column=col, value=label)
-            c.font = Font(bold=True, color="FFFFFF", size=9)
-            c.fill = PatternFill(start_color=clr, end_color=clr, fill_type="solid")
+            c.font = hdr_font
             c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = border
         ws.row_dimensions[3].height = 18
 
         # ── Row 4: Column headers ──
         for ci, lbl in enumerate(COLS, start=1):
             c = ws.cell(row=4, column=ci, value=lbl)
             c.font  = hdr_font
-            c.fill  = hdr_fill
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            c.border = border_thin
+            c.border = border
         ws.row_dimensions[4].height = 28
 
         # Column widths
         ws.column_dimensions["A"].width = 32
-        for col_letter in ["B","C","D","E","F","G","H"]:
+        for col_letter in ["B","C","D","E","F","G","H","I"]:
             ws.column_dimensions[col_letter].width = 10
 
         # ── Data rows ──
         rows = _module_table_rows(data.get(prefix, {}))
+        grand_row = next((r for r in rows if r["_type"] == "grand"), None)
+        grand_total = (
+            grand_row["npr_m"] + grand_row["npr_f"] + grand_row["oth_m"] + grand_row["oth_f"]
+        ) if grand_row else 0
+
         ri = 5
-        for i, row in enumerate(rows):
+        for row in rows:
             rtype = row["_type"]
 
             if rtype == "region":
-                ws.merge_cells(start_row=ri, start_column=1, end_row=ri, end_column=8)
+                ws.merge_cells(start_row=ri, start_column=1, end_row=ri, end_column=9)
                 c = ws.cell(row=ri, column=1, value=row["label"])
                 c.font   = region_font
-                c.fill   = region_fill
+                c.fill   = red_fill
+                c.border = border
                 c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
                 ws.row_dimensions[ri].height = 16
                 ri += 1
@@ -243,9 +303,8 @@ def build_excel_report(
 
             is_sub   = rtype == "subtotal"
             is_grand = rtype == "grand"
-            fill  = grand_fill if is_grand else (sub_fill if is_sub else (alt_fill if i % 2 == 0 else None))
+            fill  = yellow_fill if (is_sub or is_grand) else None
             font_ = grand_font if is_grand else (sub_font if is_sub else data_font)
-            fg    = "FFFFFF" if is_grand else "000000"
 
             npr_m = row.get("npr_m", 0)
             npr_f = row.get("npr_f", 0)
@@ -258,6 +317,7 @@ def build_excel_report(
                 (npr_m,  "right"), (npr_f,  "right"), (npr_m  + npr_f,  "right"),
                 (oth_m,  "right"), (oth_f,  "right"), (oth_m  + oth_f,  "right"),
                 (grand,  "right"),
+                (f"{pct(grand, grand_total):.1f}%", "right"),
             ]
             for ci, (val, align) in enumerate(vals, start=1):
                 c = ws.cell(row=ri, column=ci, value=val)
@@ -265,7 +325,7 @@ def build_excel_report(
                 if fill:
                     c.fill = fill
                 c.alignment = Alignment(horizontal=align, vertical="center")
-                c.border = border_thin
+                c.border = border
                 if isinstance(val, int):
                     c.number_format = "#,##0"
             ws.row_dimensions[ri].height = 15
@@ -288,21 +348,33 @@ def build_csv_report(
     period = _period_label(year, month)
     buf = io.StringIO()
     w   = csv.writer(buf)
+    pct = lambda n, d: round((n / d) * 100, 1) if d else 0.0  # noqa: E731
+
+    w.writerow(["NARRATIVE SUMMARY"])
+    for line in _general_narrative(data, period):
+        w.writerow([line])
+    w.writerow([])
 
     for prefix, module_title in MODULES:
         w.writerow([f"{module_title} FROM {period}"])
         w.writerow(["County", "NPR M", "NPR F", "NPR Total",
-                    "DUP/Others M", "DUP/Others F", "DUP/Others Total", "Grand Total"])
-        for row in _module_table_rows(data.get(prefix, {})):
+                    "DUP/Others M", "DUP/Others F", "DUP/Others Total", "Grand Total", "% of Total"])
+        rows = _module_table_rows(data.get(prefix, {}))
+        grand_row = next((r for r in rows if r["_type"] == "grand"), None)
+        grand_total = (
+            grand_row["npr_m"] + grand_row["npr_f"] + grand_row["oth_m"] + grand_row["oth_f"]
+        ) if grand_row else 0
+        for row in rows:
             if row["_type"] == "region":
                 w.writerow([row["label"]])
                 continue
             nm, nf = row.get("npr_m", 0), row.get("npr_f", 0)
             om, of_ = row.get("oth_m", 0), row.get("oth_f", 0)
+            grand = nm + nf + om + of_
             w.writerow([
                 row["label"], nm, nf, nm + nf,
                 om, of_, om + of_,
-                nm + nf + om + of_,
+                grand, f"{pct(grand, grand_total):.1f}%",
             ])
         w.writerow([])
 
@@ -324,89 +396,68 @@ def build_pdf_report(
         leftMargin=1.5 * cm, rightMargin=1.5 * cm,
         topMargin=1.5 * cm,  bottomMargin=1.5 * cm,
     )
-    styles = getSampleStyleSheet()
     period = _period_label(year, month)
+    pct = lambda n, d: round((n / d) * 100, 1) if d else 0.0  # noqa: E731
 
-    c_hdr    = colors.HexColor(f"#{_HEADER_BG}")
-    c_region = colors.HexColor(f"#{_REGION_BG}")
-    c_sub    = colors.HexColor("#D9D9D9")
-    c_grand  = colors.HexColor("#595959")
-    c_alt    = colors.HexColor("#EBF3FB")
-    c_blu    = colors.HexColor("#2E75B6")
-    c_grn    = colors.HexColor("#70AD47")
+    c_red    = colors.HexColor(f"#{_NRB_RED}")
+    c_yellow = colors.HexColor(f"#{_NRB_YELLOW}")
+    c_grid   = colors.HexColor("#000000")
 
-    story = []
+    title_style = ParagraphStyle("rptTitle", fontSize=16, fontName="Times-Bold", alignment=1, spaceAfter=4)
+    h2_style    = ParagraphStyle("h2", fontSize=11, fontName="Times-Bold", spaceBefore=4, spaceAfter=4)
+    body_style  = ParagraphStyle("body", fontSize=10, fontName="Times-Roman", spaceAfter=6, leading=14)
+
+    story = [Paragraph("NATIONAL REGISTRATION BUREAU", title_style)]
+    story.append(Paragraph(f"NARRATIVE SUMMARY — {period}", h2_style))
+    for line in _general_narrative(data, period):
+        story.append(Paragraph(line, body_style))
+    story.append(PageBreak())
 
     for pi, (prefix, module_title) in enumerate(MODULES):
         if pi > 0:
             story.append(PageBreak())
 
-        # Title block
-        title_style = ParagraphStyle(
-            "rptTitle",
-            fontSize=12, fontName="Helvetica-Bold",
-            textColor=colors.white,
-            backColor=c_hdr,
-            alignment=1,
-            spaceBefore=0, spaceAfter=4,
-            borderPad=6,
-        )
         story.append(Paragraph(f"{module_title} FROM {period}", title_style))
         story.append(Spacer(1, 0.3 * cm))
 
         rows_data = _module_table_rows(data.get(prefix, {}))
+        grand_row = next((r for r in rows_data if r["_type"] == "grand"), None)
+        grand_total = (
+            grand_row["npr_m"] + grand_row["npr_f"] + grand_row["oth_m"] + grand_row["oth_f"]
+        ) if grand_row else 0
 
         # Table header
-        header_row1 = ["LIST OF COUNTIES",
-                       Paragraph("<b>NPR</b>",       ParagraphStyle("", fontSize=7, textColor=colors.white, alignment=1)),
-                       "", "",
-                       Paragraph("<b>DUP/OTHERS</b>", ParagraphStyle("", fontSize=7, textColor=colors.white, alignment=1)),
-                       "", "", "GRAND\nTOTAL"]
-        header_row2 = ["", "M", "F", "TOTAL", "M", "F", "TOTAL", ""]
+        header_row1 = ["LIST OF COUNTIES", "NPR", "", "", "DUP/OTHERS", "", "", "GRAND\nTOTAL", "% OF\nTOTAL"]
+        header_row2 = ["", "M", "F", "TOTAL", "M", "F", "TOTAL", "", ""]
 
         tbl_data = [header_row1, header_row2]
         tbl_style_cmds = [
-            # Header row 1
-            ("BACKGROUND",   (0, 0), (-1, 0),  c_hdr),
-            ("TEXTCOLOR",    (0, 0), (-1, 0),  colors.white),
-            ("FONTNAME",     (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",     (0, 0), (-1, 0),  7),
-            ("ALIGN",        (0, 0), (-1, 0),  "CENTER"),
-            ("VALIGN",       (0, 0), (-1, 0),  "MIDDLE"),
-            # NPR group header span
-            ("BACKGROUND",   (1, 0), (3, 0),   c_blu),
-            ("SPAN",         (1, 0), (3, 0)),
-            # DUP/OTHERS group header span
-            ("BACKGROUND",   (4, 0), (6, 0),   c_grn),
-            ("SPAN",         (4, 0), (6, 0)),
-            # Header row 2
-            ("BACKGROUND",   (0, 1), (-1, 1),  c_hdr),
-            ("TEXTCOLOR",    (0, 1), (-1, 1),  colors.white),
-            ("FONTNAME",     (0, 1), (-1, 1),  "Helvetica-Bold"),
-            ("FONTSIZE",     (0, 1), (-1, 1),  7),
-            ("ALIGN",        (0, 1), (-1, 1),  "CENTER"),
-            # General
-            ("FONTSIZE",     (0, 2), (-1, -1), 7),
+            ("SPAN", (0, 0), (0, 1)), ("SPAN", (7, 0), (7, 1)), ("SPAN", (8, 0), (8, 1)),
+            ("SPAN", (1, 0), (3, 0)), ("SPAN", (4, 0), (6, 0)),
+            ("FONTNAME",     (0, 0), (-1, 1), "Times-Bold"),
+            ("FONTSIZE",     (0, 0), (-1, 1), 8),
+            ("ALIGN",        (0, 0), (-1, 1), "CENTER"),
+            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+            ("FONTNAME",     (0, 2), (-1, -1), "Times-Roman"),
+            ("FONTSIZE",     (0, 2), (-1, -1), 8),
             ("ALIGN",        (1, 2), (-1, -1), "RIGHT"),
             ("ALIGN",        (0, 2), (0, -1),  "LEFT"),
-            ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-            ("GRID",         (0, 0), (-1, -1), 0.3, colors.HexColor("#CCCCCC")),
-            ("TOPPADDING",   (0, 0), (-1, -1), 2),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
+            ("GRID",         (0, 0), (-1, -1), 0.4, c_grid),
+            ("TOPPADDING",   (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
         ]
 
         row_offset = 2
         for i, row in enumerate(rows_data):
             rtype = row["_type"]
+            r = row_offset + i
 
             if rtype == "region":
-                tbl_data.append([row["label"], "", "", "", "", "", "", ""])
-                r = row_offset + i
+                tbl_data.append([row["label"], "", "", "", "", "", "", "", ""])
                 tbl_style_cmds += [
                     ("SPAN",       (0, r), (-1, r)),
-                    ("BACKGROUND", (0, r), (-1, r), c_region),
-                    ("TEXTCOLOR",  (0, r), (-1, r), colors.white),
-                    ("FONTNAME",   (0, r), (-1, r), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, r), (-1, r), c_red),
+                    ("FONTNAME",   (0, r), (-1, r), "Times-Bold"),
                 ]
                 continue
 
@@ -417,32 +468,23 @@ def build_pdf_report(
                 row["label"],
                 f"{nm:,}", f"{nf:,}", f"{nm+nf:,}",
                 f"{om:,}", f"{of_:,}", f"{om+of_:,}",
-                f"{grand:,}",
+                f"{grand:,}", f"{pct(grand, grand_total):.1f}%",
             ])
-            r = row_offset + i
-            if rtype == "subtotal":
+            if rtype in ("subtotal", "grand"):
                 tbl_style_cmds += [
-                    ("BACKGROUND", (0, r), (-1, r), c_sub),
-                    ("FONTNAME",   (0, r), (-1, r), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, r), (-1, r), c_yellow),
+                    ("FONTNAME",   (0, r), (-1, r), "Times-Bold"),
                 ]
-            elif rtype == "grand":
-                tbl_style_cmds += [
-                    ("BACKGROUND", (0, r), (-1, r), c_grand),
-                    ("TEXTCOLOR",  (0, r), (-1, r), colors.white),
-                    ("FONTNAME",   (0, r), (-1, r), "Helvetica-Bold"),
-                ]
-            elif i % 2 == 0:
-                tbl_style_cmds += [("BACKGROUND", (0, r), (-1, r), c_alt)]
 
         pw = landscape(A4)[0] - 3 * cm
-        col_widths = [pw * 0.28] + [pw * 0.72 / 7] * 7
+        col_widths = [pw * 0.24] + [pw * 0.76 / 8] * 8
 
         tbl = Table(tbl_data, colWidths=col_widths, repeatRows=2)
         tbl.setStyle(TableStyle(tbl_style_cmds))
         story.append(tbl)
 
         from datetime import date
-        footer = ParagraphStyle("footer", fontSize=7, textColor=colors.grey, alignment=1, spaceBefore=4)
+        footer = ParagraphStyle("footer", fontSize=8, fontName="Times-Italic", textColor=colors.grey, alignment=1, spaceBefore=8)
         story.append(Spacer(1, 0.2 * cm))
         story.append(Paragraph(f"{org_name} · Generated {date.today().strftime('%d %B %Y')}", footer))
 
@@ -491,81 +533,63 @@ def build_word_report(
     section.top_margin  = section.bottom_margin = Inches(0.5)
 
     period = _period_label(year, month)
+    pct = lambda n, d: round((n / d) * 100, 1) if d else 0.0  # noqa: E731
+
+    def add_title(text: str, size: int):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(text)
+        run.bold = True
+        run.font.size = Pt(size)
+        run.font.name = _NRB_FONT
+
+    add_title("NATIONAL REGISTRATION BUREAU", 16)
+    add_title(f"NARRATIVE SUMMARY — {period}", 13)
+    doc.add_paragraph()
+    for line in _general_narrative(data, period):
+        p = doc.add_paragraph()
+        run = p.add_run(line)
+        run.font.size = Pt(11)
+        run.font.name = _NRB_FONT
+    doc.add_page_break()
 
     for pi, (prefix, module_title) in enumerate(MODULES):
         if pi > 0:
             doc.add_page_break()
 
-        # Title
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(f"{module_title} FROM {period}")
-        run.bold = True
-        run.font.size = Pt(12)
-        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        from docx.oxml import OxmlElement as OE
-        pPr = p._p.get_or_add_pPr()
-        shd = OE("w:shd")
-        shd.set(qn("w:val"), "clear")
-        shd.set(qn("w:color"), "auto")
-        shd.set(qn("w:fill"), _HEADER_BG)
-        pPr.append(shd)
+        add_title(f"{module_title} FROM {period}", 12)
 
-        # Table: 2 header rows + data rows
+        # Table: 2 header rows + data rows, plus a % OF TOTAL column
         rows_data = _module_table_rows(data.get(prefix, {}))
+        grand_row = next((r for r in rows_data if r["_type"] == "grand"), None)
+        grand_total = (
+            grand_row["npr_m"] + grand_row["npr_f"] + grand_row["oth_m"] + grand_row["oth_f"]
+        ) if grand_row else 0
+
         nrows = 2 + len(rows_data)
-        table = doc.add_table(rows=nrows, cols=8)
+        table = doc.add_table(rows=nrows, cols=9)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = "Table Grid"
 
-        # Set column widths
-        from docx.oxml.ns import qn as _qn
-        tbl_el = table._tbl
-        tblPr = tbl_el.find(_qn("w:tblPr"))
-        if tblPr is None:
-            tblPr = OxmlElement("w:tblPr")
-            tbl_el.insert(0, tblPr)
-        tblW = OxmlElement("w:tblW")
-        tblW.set(_qn("w:type"), "auto")
-        tblW.set(_qn("w:w"), "0")
-        tblPr.append(tblW)
-
-        col_pcts = [28, 9, 9, 10, 9, 9, 10, 16]
-
-        def set_col_w(cell, pct):
-            tc = cell._tc
-            tcPr = tc.get_or_add_tcPr()
-            tcW = OxmlElement("w:tcW")
-            tcW.set(_qn("w:type"), "pct")
-            tcW.set(_qn("w:w"), str(pct * 50))
-            tcPr.append(tcW)
-
         # Header row 1: group labels
         h1 = table.rows[0]
-        _cell_text(h1.cells[0], "LIST OF COUNTIES", bold=True, size=7, color_hex=_HEADER_FG,
-                   align=WD_ALIGN_PARAGRAPH.CENTER)
-        _set_cell_bg(h1.cells[0], _HEADER_BG)
-        # Merge NPR group
+        h2 = table.rows[1]
+        h1.cells[0].merge(h2.cells[0])
+        _cell_text(h1.cells[0], "LIST OF COUNTIES", bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
         h1.cells[1].merge(h1.cells[3])
-        _cell_text(h1.cells[1], "NPR", bold=True, size=7, color_hex="FFFFFF",
-                   align=WD_ALIGN_PARAGRAPH.CENTER)
-        _set_cell_bg(h1.cells[1], "2E75B6")
-        # Merge DUP group
+        _cell_text(h1.cells[1], "NPR", bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
         h1.cells[4].merge(h1.cells[6])
-        _cell_text(h1.cells[4], "DUP/OTHERS", bold=True, size=7, color_hex="FFFFFF",
-                   align=WD_ALIGN_PARAGRAPH.CENTER)
-        _set_cell_bg(h1.cells[4], "70AD47")
-        _cell_text(h1.cells[7], "GRAND\nTOTAL", bold=True, size=7, color_hex=_HEADER_FG,
-                   align=WD_ALIGN_PARAGRAPH.CENTER)
-        _set_cell_bg(h1.cells[7], _HEADER_BG)
+        _cell_text(h1.cells[4], "DUP/OTHERS", bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
+        h1.cells[7].merge(h2.cells[7])
+        _cell_text(h1.cells[7], "GRAND\nTOTAL", bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
+        h1.cells[8].merge(h2.cells[8])
+        _cell_text(h1.cells[8], "% OF\nTOTAL", bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
 
         # Header row 2: M/F/TOTAL labels
-        h2 = table.rows[1]
-        labels2 = ["", "M", "F", "TOTAL", "M", "F", "TOTAL", ""]
+        labels2 = ["", "M", "F", "TOTAL", "M", "F", "TOTAL", "", ""]
         for ci, lbl in enumerate(labels2):
-            _cell_text(h2.cells[ci], lbl, bold=True, size=7, color_hex=_HEADER_FG,
-                       align=WD_ALIGN_PARAGRAPH.CENTER)
-            _set_cell_bg(h2.cells[ci], _HEADER_BG)
+            if lbl:
+                _cell_text(h2.cells[ci], lbl, bold=True, size=7, align=WD_ALIGN_PARAGRAPH.CENTER, font_name=_NRB_FONT)
 
         # Data rows
         for ri, row in enumerate(rows_data, start=2):
@@ -573,9 +597,9 @@ def build_word_report(
             rtype = row["_type"]
 
             if rtype == "region":
-                trow.cells[0].merge(trow.cells[7])
-                _cell_text(trow.cells[0], row["label"], bold=True, size=7, color_hex=_REGION_FG)
-                _set_cell_bg(trow.cells[0], _REGION_BG)
+                trow.cells[0].merge(trow.cells[8])
+                _cell_text(trow.cells[0], row["label"], bold=True, size=7, font_name=_NRB_FONT)
+                _set_cell_bg(trow.cells[0], _NRB_RED)
                 continue
 
             nm, nf = row.get("npr_m", 0), row.get("npr_f", 0)
@@ -583,15 +607,14 @@ def build_word_report(
             grand = nm + nf + om + of_
             is_sub   = rtype == "subtotal"
             is_grand = rtype == "grand"
-            bg = "595959" if is_grand else (_TOTAL_ROW_BG if is_sub else None)
-            fg = "FFFFFF" if is_grand else "000000"
+            bg = _NRB_YELLOW if (is_sub or is_grand) else None
 
-            vals = [row["label"], nm, nf, nm+nf, om, of_, om+of_, grand]
-            aligns = [WD_ALIGN_PARAGRAPH.LEFT] + [WD_ALIGN_PARAGRAPH.RIGHT] * 7
+            vals = [row["label"], nm, nf, nm+nf, om, of_, om+of_, grand, f"{pct(grand, grand_total):.1f}%"]
+            aligns = [WD_ALIGN_PARAGRAPH.LEFT] + [WD_ALIGN_PARAGRAPH.RIGHT] * 8
             for ci, (val, align) in enumerate(zip(vals, aligns)):
                 text = f"{val:,}" if isinstance(val, int) else str(val)
                 _cell_text(trow.cells[ci], text, bold=is_sub or is_grand,
-                           size=7, color_hex=fg, align=align)
+                           size=7, align=align, font_name=_NRB_FONT)
                 if bg:
                     _set_cell_bg(trow.cells[ci], bg)
 
@@ -612,8 +635,8 @@ def build_word_report(
 #   {"breakdown": [...], "county_totals": [...], "totals": {...}, "age_breakdown": [...]}
 
 _MOBILE_FONT   = "Times New Roman"
-_MOBILE_RED    = "FF0000"   # county heading rows
-_MOBILE_YELLOW = "FFFF00"   # TOTAL / GRAND TOTAL rows
+_NRB_RED    = "FF0000"   # county heading rows
+_NRB_YELLOW = "FFFF00"   # TOTAL / GRAND TOTAL rows
 
 
 def _mobile_period_text(year: int, month: "int | None", quarter: "int | None") -> str:
@@ -679,8 +702,8 @@ def build_mobile_excel_report(data: dict, year: int, month: "int | None", quarte
     period = _mobile_period_text(year, month, quarter)
     t = data["totals"]
 
-    red_fill    = PatternFill(start_color=_MOBILE_RED,    end_color=_MOBILE_RED,    fill_type="solid")
-    yellow_fill = PatternFill(start_color=_MOBILE_YELLOW, end_color=_MOBILE_YELLOW, fill_type="solid")
+    red_fill    = PatternFill(start_color=_NRB_RED,    end_color=_NRB_RED,    fill_type="solid")
+    yellow_fill = PatternFill(start_color=_NRB_YELLOW, end_color=_NRB_YELLOW, fill_type="solid")
     title_font = Font(name=_MOBILE_FONT, bold=True, size=16)
     subtitle_font = Font(name=_MOBILE_FONT, bold=True, size=13)
     period_font = Font(name=_MOBILE_FONT, bold=True, size=13)
@@ -975,7 +998,7 @@ def build_mobile_pdf_report(data: dict, year: int, month: "int | None", quarter:
         leftMargin=1.5 * cm, rightMargin=1.5 * cm, topMargin=1.5 * cm, bottomMargin=1.5 * cm,
     )
     period = _mobile_period_text(year, month, quarter)
-    c_yellow = colors.HexColor(f"#{_MOBILE_YELLOW}")
+    c_yellow = colors.HexColor(f"#{_NRB_YELLOW}")
     c_grid = colors.HexColor("#000000")
 
     title_style    = ParagraphStyle("t1", fontSize=16, fontName="Times-Bold", alignment=1, spaceAfter=2)
@@ -1120,7 +1143,7 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
     for ci, val in enumerate(grand_vals):
         _cell_text(table1.rows[grand_idx].cells[ci], val, bold=True, size=9,
                    align=WD_ALIGN_PARAGRAPH.LEFT if ci == 0 else WD_ALIGN_PARAGRAPH.RIGHT, font_name=_MOBILE_FONT)
-        _set_cell_bg(table1.rows[grand_idx].cells[ci], _MOBILE_YELLOW)
+        _set_cell_bg(table1.rows[grand_idx].cells[ci], _NRB_YELLOW)
 
     doc.add_paragraph()
     doc.add_paragraph().add_run("Registration Volume — by County, Subcounty & Ward").bold = True
@@ -1186,7 +1209,7 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
         align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 2 else WD_ALIGN_PARAGRAPH.RIGHT
         text = f"{val:,}" if isinstance(val, int) else val
         _cell_text(table2.rows[grand_idx2].cells[ci], text, bold=True, size=8, align=align, font_name=_MOBILE_FONT)
-        _set_cell_bg(table2.rows[grand_idx2].cells[ci], _MOBILE_YELLOW)
+        _set_cell_bg(table2.rows[grand_idx2].cells[ci], _NRB_YELLOW)
 
     # ── Table 3: Daily Report — NPR by Age Band ──
     doc.add_paragraph()
@@ -1240,7 +1263,7 @@ def build_mobile_word_report(data: dict, year: int, month: "int | None", quarter
         align = WD_ALIGN_PARAGRAPH.LEFT if ci <= 1 else WD_ALIGN_PARAGRAPH.RIGHT
         text = f"{val:,}" if isinstance(val, int) else val
         _cell_text(table3.rows[grand_idx3].cells[ci], text, bold=True, size=8, align=align, font_name=_MOBILE_FONT)
-        _set_cell_bg(table3.rows[grand_idx3].cells[ci], _MOBILE_YELLOW)
+        _set_cell_bg(table3.rows[grand_idx3].cells[ci], _NRB_YELLOW)
 
     buffer = io.BytesIO()
     doc.save(buffer)
