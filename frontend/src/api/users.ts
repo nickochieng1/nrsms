@@ -12,6 +12,7 @@ export async function createUser(payload: {
   email: string
   password: string
   role: UserRole
+  phone?: string | null
   station_id?: number | null
   subcounty?: string | null
   county?: string | null

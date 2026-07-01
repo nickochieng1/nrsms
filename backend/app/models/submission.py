@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,6 +9,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.station import Station
+    from app.models.submission_comment import SubmissionComment
     from app.models.user import User
 
 
@@ -245,6 +246,10 @@ class Submission(Base):
     rrop_reviewer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[rrop_reviewer_id])
     hq_compiled_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[hq_compiled_by_id])
     reviewed_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewed_by])
+    comments: Mapped[List["SubmissionComment"]] = relationship(
+        "SubmissionComment", back_populates="submission",
+        cascade="all, delete-orphan", order_by="SubmissionComment.created_at",
+    )
 
     @property
     def submitted_by_name(self) -> Optional[str]:

@@ -6,6 +6,7 @@ export interface User {
   username: string | null
   email: string
   role: UserRole
+  phone: string | null
   station_id: number | null
   subcounty: string | null
   county: string | null

@@ -11,6 +11,7 @@ class UserBase(BaseModel):
     email: EmailStr
     username: Optional[str] = None
     role: UserRole = UserRole.CLERK
+    phone: Optional[str] = None
     station_id: Optional[int] = None
     subcounty: Optional[str] = None
     county: Optional[str] = None
@@ -26,6 +27,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     role: Optional[UserRole] = None
+    phone: Optional[str] = None
     station_id: Optional[int] = None
     subcounty: Optional[str] = None
     county: Optional[str] = None

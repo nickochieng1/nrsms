@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { useLang } from '@/contexts/LanguageContext'
 import { ROLE_LABELS } from '@/utils/format'
 import clsx from 'clsx'
 import nrbLogo from '@/images/nrb-kenya.svg'
@@ -24,6 +25,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const { user, logout } = useAuth()
+  const { lang, setLang } = useLang()
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => user && item.roles.includes(user.role),
@@ -84,11 +86,25 @@ export function Sidebar({ onClose }: SidebarProps) {
             <p className="text-xs text-primary-200">{ROLE_LABELS[user.role]}</p>
           </div>
         )}
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={() => setLang('en')}
+            className={`text-xs px-2 py-1 rounded ${lang === 'en' ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white'}`}
+          >
+            EN
+          </button>
+          <button
+            onClick={() => setLang('sw')}
+            className={`text-xs px-2 py-1 rounded ${lang === 'sw' ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white'}`}
+          >
+            SW
+          </button>
+        </div>
         <button
           onClick={logout}
           className="w-full text-left text-xs text-white/50 hover:text-white transition-colors py-1"
         >
-          Sign out →
+          {lang === 'sw' ? 'Toka →' : 'Sign out →'}
         </button>
       </div>
     </aside>

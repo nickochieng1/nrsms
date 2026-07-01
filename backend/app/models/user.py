@@ -44,6 +44,8 @@ class User(Base):
     # Geographic scope — narrows as you go down the hierarchy:
     # DCROP needs subcounty+county+region, CROP needs county+region,
     # RROP/HQ_CLERK need only region, REGISTRAR/DIRECTOR/ADMIN need none.
+    phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+
     station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id"), nullable=True)
     subcounty: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     county: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

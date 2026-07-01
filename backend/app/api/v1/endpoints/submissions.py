@@ -13,9 +13,22 @@ from app.schemas.submission import (
     SubmissionCreate, SubmissionOut, SubmissionRegionalStatusRow, SubmissionReview, SubmissionUpdate,
 )
 from app.services import audit as audit_svc
+from app.services.sms import notify_submission_action
 from app.services.validation import validate_submission
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
+
+
+def _phones(db: Session, role: UserRole, region: str = None, county: str = None):
+    """Return phone numbers of active users matching role + optional scope."""
+    q = db.query(User.phone, User.full_name).filter(
+        User.role == role, User.is_active.is_(True), User.phone.isnot(None)
+    )
+    if region:
+        q = q.filter(func.lower(User.region) == region.lower())
+    if county:
+        q = q.filter(func.lower(User.county) == county.lower())
+    return [r.phone for r in q.all() if r.phone]
 
 # Statuses each downstream role can see once a submission has left DRAFT —
 # narrower than "everything" so e.g. a CROP in Mombasa never sees Kisumu's
@@ -145,6 +158,104 @@ def regional_status(
     return sorted(by_region.values(), key=lambda r: r["region"])
 
 
+# ── Excel bulk upload ─────────────────────────────────────────────────────────
+import io as _io
+import openpyxl as _openpyxl
+from fastapi import UploadFile, File
+
+
+BULK_FIELDS = [
+    "period_month", "period_year",
+    "app_npr_male", "app_npr_female",
+    "app_replacements_male", "app_replacements_female",
+    "app_changes_male", "app_changes_female",
+    "app_duplicates_male", "app_duplicates_female",
+    "app_type4_male", "app_type4_female",
+    "app_type5_male", "app_type5_female",
+    "ids_npr_male", "ids_npr_female",
+    "ids_replacements_male", "ids_replacements_female",
+    "ids_changes_male", "ids_changes_female",
+    "ids_duplicates_male", "ids_duplicates_female",
+    "ids_type4_male", "ids_type4_female",
+    "ids_type5_male", "ids_type5_female",
+    "rej_npr_male", "rej_npr_female",
+    "rej_replacements_male", "rej_replacements_female",
+    "rej_changes_male", "rej_changes_female",
+    "rej_duplicates_male", "rej_duplicates_female",
+    "rej_type4_male", "rej_type4_female",
+    "rej_type5_male", "rej_type5_female",
+    "collected_npr_male", "collected_npr_female",
+    "collected_others_male", "collected_others_female",
+    "collected_rejected_male", "collected_rejected_female",
+    "uncollected_npr_male", "uncollected_npr_female",
+    "uncollected_others_male", "uncollected_others_female",
+    "uncollected_lost_male", "uncollected_lost_female",
+    "reg136c_balance_bd", "reg136c_used", "reg136c_spoilt", "reg136c_returned",
+    "photo3a_balance_bd", "photo3a_used", "photo3a_spoilt", "photo3a_returned",
+]
+
+
+@router.get("/bulk-template")
+def download_bulk_template():
+    """Return an Excel template the DCROP can fill in and re-upload."""
+    from fastapi.responses import Response
+    wb = _openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Submissions"
+    ws.append(BULK_FIELDS)
+    ws.append([6, 2026] + [0] * (len(BULK_FIELDS) - 2))  # example row
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=nrsms_bulk_template.xlsx"},
+    )
+
+
+@router.post("/bulk-upload")
+def bulk_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.DCROP, UserRole.CLERK)),
+):
+    """Parse a filled-in Excel template and create a submission for each row.
+    Returns a list of {row, status, detail} objects."""
+    if not current_user.subcounty and not current_user.county:
+        raise HTTPException(status_code=403, detail="Your account has no geographic area assigned")
+
+    try:
+        wb = _openpyxl.load_workbook(_io.BytesIO(file.file.read()), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not parse the uploaded file — must be .xlsx")
+
+    ws = wb.active
+    headers = [str(c.value or "").strip().lower() for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    if "period_month" not in headers:
+        raise HTTPException(status_code=400, detail="First row must be headers matching the template")
+
+    results = []
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(v is not None for v in row):
+            continue
+        row_data = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
+        try:
+            payload = SubmissionCreate(
+                period_month=int(row_data.get("period_month") or 0),
+                period_year=int(row_data.get("period_year") or 0),
+                **{f: int(row_data.get(f) or 0) for f in BULK_FIELDS if f not in ("period_month", "period_year")},
+            )
+            sub = crud_sub.create(
+                db, payload, current_user.id,
+                subcounty=current_user.subcounty, county=current_user.county, region=current_user.region,
+            )
+            results.append({"row": row_idx, "status": "created", "id": sub.id,
+                            "detail": f"{payload.period_month}/{payload.period_year}"})
+        except Exception as e:
+            results.append({"row": row_idx, "status": "error", "detail": str(e)})
+
+    return {"results": results, "created": sum(1 for r in results if r["status"] == "created")}
+
 @router.get("/{submission_id}", response_model=SubmissionOut)
 def get_submission(
     submission_id: int,
@@ -200,6 +311,13 @@ def submit_submission(
     meta = get_audit_meta(request)
     audit_svc.log(db, user_id=current_user.id, action="SUBMIT", resource="submission",
                   resource_id=submission_id, **meta)
+    # Notify CROP(s) in the same county that data awaits review
+    from app.services.sms import send_sms
+    period = f"{updated.period_month}/{updated.period_year}"
+    send_sms(
+        _phones(db, UserRole.CROP, region=sub.region, county=sub.county),
+        f"NRSMS: {sub.subcounty or sub.county} ({period}) has been submitted and is awaiting your approval.",
+    )
     return updated
 
 
@@ -220,16 +338,26 @@ def crop_review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting CROP review")
 
     meta = get_audit_meta(request)
+    from app.services.sms import send_sms
+    period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.crop_approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="CROP_APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
+        send_sms(
+            _phones(db, UserRole.RROP, region=sub.region),
+            f"NRSMS: {sub.county} county data ({period}) has been approved by CROP and is now awaiting your regional review.",
+        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
         updated = crud_sub.crop_reject(db, sub, current_user.id, body.rejection_reason)
         audit_svc.log(db, user_id=current_user.id, action="CROP_REJECT", resource="submission",
                       resource_id=submission_id, new_value={"reason": body.rejection_reason}, **meta)
+        send_sms(
+            _phones(db, UserRole.DCROP, region=sub.region, county=sub.county),
+            f"NRSMS: Your {sub.subcounty or sub.county} submission ({period}) was rejected. Reason: {body.rejection_reason[:100]}. Please correct and resubmit.",
+        )
     else:
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
     return updated
@@ -252,16 +380,26 @@ def rrop_review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting RROP review")
 
     meta = get_audit_meta(request)
+    from app.services.sms import send_sms
+    period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.rrop_approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="RROP_APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
+        send_sms(
+            _phones(db, UserRole.HQ_CLERK, region=sub.region),
+            f"NRSMS: {sub.region} data ({period}) has been RROP-approved and is ready for HQ compilation.",
+        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
         updated = crud_sub.rrop_reject(db, sub, current_user.id, body.rejection_reason)
         audit_svc.log(db, user_id=current_user.id, action="RROP_REJECT", resource="submission",
                       resource_id=submission_id, new_value={"reason": body.rejection_reason}, **meta)
+        send_sms(
+            _phones(db, UserRole.CROP, region=sub.region, county=sub.county),
+            f"NRSMS: {sub.county} county data ({period}) was returned by RROP. Reason: {body.rejection_reason[:100]}",
+        )
     else:
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
     return updated
@@ -305,10 +443,16 @@ def review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting registrar review")
 
     meta = get_audit_meta(request)
+    from app.services.sms import send_sms
+    period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
+        send_sms(
+            _phones(db, UserRole.RROP, region=sub.region),
+            f"NRSMS: {sub.region} ({period}) has been finally approved and is now visible in the Director's reports.",
+        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
@@ -324,6 +468,8 @@ def _assert_can_read(user: User, sub: Submission) -> None:
     role = user.role
     same = lambda a, b: bool(a and b and a.lower() == b.lower())  # noqa: E731
 
+    if role == UserRole.ADMIN:
+        return  # admin has emergency read access to all submissions
     if role in (UserRole.DCROP, UserRole.CLERK):
         if sub.submitted_by != user.id:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -344,3 +490,70 @@ def _assert_can_read(user: User, sub: Submission) -> None:
             raise HTTPException(status_code=403, detail="Access denied")
     else:
         raise HTTPException(status_code=403, detail="Access denied")
+
+
+# ── Comments ──────────────────────────────────────────────────────────────────
+from typing import List as TypingList
+
+from app.models.submission_comment import SubmissionComment
+from app.schemas.submission_comment import CommentCreate, CommentOut
+
+
+@router.get("/{submission_id}/comments", response_model=TypingList[CommentOut])
+def list_comments(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    sub = crud_sub.get(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    _assert_can_read(current_user, sub)
+    return db.query(SubmissionComment).filter(
+        SubmissionComment.submission_id == submission_id
+    ).order_by(SubmissionComment.created_at).all()
+
+
+@router.post("/{submission_id}/comments", response_model=CommentOut, status_code=201)
+def add_comment(
+    submission_id: int,
+    body: CommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    sub = crud_sub.get(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    _assert_can_read(current_user, sub)
+    if not body.content.strip():
+        raise HTTPException(status_code=400, detail="Comment cannot be empty")
+    comment = SubmissionComment(
+        submission_id=submission_id,
+        user_id=current_user.id,
+        content=body.content.strip(),
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    return comment
+
+
+# ── Anomaly check ─────────────────────────────────────────────────────────────
+from app.services.anomaly import check_anomalies
+
+
+@router.get("/{submission_id}/anomaly-check")
+def anomaly_check(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a list of warning strings if any field is anomalously high
+    vs the submitter's own 6-month history. Empty list = all looks normal."""
+    sub = crud_sub.get(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    _assert_can_read(current_user, sub)
+    return {"warnings": check_anomalies(db, sub)}
+
+

@@ -6,4 +6,4 @@ class Base(DeclarativeBase):
 
 
 # Import all models here so Alembic can detect them
-from app.models import user, station, submission, audit_log, mobile_registration, notification  # noqa: F401, E402
+from app.models import user, station, submission, audit_log, mobile_registration, notification, submission_comment  # noqa: F401, E402

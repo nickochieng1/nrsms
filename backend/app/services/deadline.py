@@ -7,6 +7,7 @@ from app.models.notification import Notification
 from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User, UserRole
 from app.services.email import send_email
+from app.services.sms import send_sms
 
 # A region counts as "done" once its data has passed RROP review — it
 # doesn't need to have reached final Registrar approval yet, since HQ_CLERK
@@ -77,6 +78,11 @@ def check_deadlines(db: Session, today: Optional[date] = None) -> List[str]:
                     "county submissions as soon as possible.\n\n— NRSMS"
                 ),
             )
+            if rrop.phone:
+                send_sms(
+                    [rrop.phone],
+                    f"NRSMS ALERT: {region} data for {period_label} is overdue. Please log in and approve your county submissions urgently.",
+                )
 
     escalation_targets = (
         db.query(User)

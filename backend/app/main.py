@@ -37,6 +37,7 @@ def on_startup():
     _migrate_fk_nullability()
     _migrate_submission_hierarchy()
     _normalize_enum_case()
+    _migrate_tier1_schema()
     _seed_superuser()
     _seed_stations()
 
@@ -360,6 +361,21 @@ def _migrate_submission_hierarchy():
         conn.execute(text("UPDATE submissions SET status = 'dcrop_submitted' WHERE status = 'submitted'"))
         conn.execute(text("UPDATE submissions SET status = 'draft' WHERE status = 'rejected'"))
         conn.commit()
+
+
+def _migrate_tier1_schema():
+    """Add columns introduced by Tier 1 features: phone on users,
+    and the submissions_comments table (created by create_all but the
+    phone column needs an explicit ALTER on existing DBs)."""
+    from sqlalchemy import text
+    if settings.DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
 
 def _normalize_enum_case():

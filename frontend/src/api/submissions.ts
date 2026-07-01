@@ -71,6 +71,45 @@ export async function getRegionalStatus(year: number, month: number): Promise<Re
   return data
 }
 
+// ── Comments ──────────────────────────────────────────────────────────────────
+export interface SubmissionComment {
+  id: number
+  submission_id: number
+  user_id: number | null
+  author_name: string | null
+  author_role: string | null
+  content: string
+  created_at: string
+}
+
+export async function getComments(submissionId: number): Promise<SubmissionComment[]> {
+  const { data } = await apiClient.get<SubmissionComment[]>(`/submissions/${submissionId}/comments`)
+  return data
+}
+
+export async function addComment(submissionId: number, content: string): Promise<SubmissionComment> {
+  const { data } = await apiClient.post<SubmissionComment>(`/submissions/${submissionId}/comments`, { content })
+  return data
+}
+
+export async function getAnomalyCheck(submissionId: number): Promise<{ warnings: string[] }> {
+  const { data } = await apiClient.get<{ warnings: string[] }>(`/submissions/${submissionId}/anomaly-check`)
+  return data
+}
+
+export function getBulkTemplateUrl(): string {
+  return `${apiClient.defaults.baseURL}/submissions/bulk-template`
+}
+
+export async function bulkUpload(file: File): Promise<{ results: any[]; created: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await apiClient.post('/submissions/bulk-upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
+
 export async function getNotifications(): Promise<Notification[]> {
   const { data } = await apiClient.get<Notification[]>('/notifications')
   return data

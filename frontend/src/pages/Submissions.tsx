@@ -1,17 +1,88 @@
-import { useState } from 'react'
+import { Fragment as _Fragment, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getSubmissions, submitSubmission, reviewSubmission,
   cropReviewSubmission, rropReviewSubmission, hqCompileSubmission,
+  getComments, addComment, getAnomalyCheck, getBulkTemplateUrl, bulkUpload,
 } from '@/api/submissions'
+
 import { useAuth } from '@/hooks/useAuth'
-import { STATUS_COLORS, STATUS_LABELS } from '@/utils/format'
+
+import { STATUS_COLORS, STATUS_LABELS, formatRelativeTime, ROLE_LABELS } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, MODULE_LABELS, MODULE_COLORS } from '@/types'
 import type { Submission, SubmissionStatus, ModulePrefix } from '@/types'
 
 const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function CommentsThread({ submissionId }: { submissionId: number }) {
+  const qc = useQueryClient()
+  const [draft, setDraft] = useState('')
+  const { data: comments } = useQuery({
+    queryKey: ['comments', submissionId],
+    queryFn: () => getComments(submissionId),
+  })
+  const postMutation = useMutation({
+    mutationFn: (content: string) => addComment(submissionId, content),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['comments', submissionId] }); setDraft('') },
+  })
+  return (
+    <div className="mt-4 border-t border-gray-200 pt-4">
+      <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">Comments</h4>
+      {comments?.length === 0 && <p className="text-xs text-gray-400 mb-3">No comments yet.</p>}
+      <div className="space-y-3 mb-3">
+        {comments?.map((c) => (
+          <div key={c.id} className="flex gap-3">
+            <div className="w-7 h-7 rounded-full bg-primary-700 text-white text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
+              {(c.author_name ?? '?')[0].toUpperCase()}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-xs font-medium text-gray-700">{c.author_name ?? 'Unknown'}</span>
+                {c.author_role && <span className="badge bg-gray-100 text-gray-500 text-[10px]">{ROLE_LABELS[c.author_role] ?? c.author_role}</span>}
+                <span className="text-[11px] text-gray-400">{formatRelativeTime(c.created_at)}</span>
+              </div>
+              <p className="text-xs text-gray-700 bg-gray-50 rounded px-3 py-2">{c.content}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <textarea
+          className="input flex-1 h-16 resize-none text-xs"
+          placeholder="Add a comment…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button
+          className="btn-primary text-xs px-3 self-end"
+          disabled={!draft.trim() || postMutation.isPending}
+          onClick={() => postMutation.mutate(draft)}
+        >
+          Post
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AnomalyBanner({ submissionId }: { submissionId: number }) {
+  const { data } = useQuery({
+    queryKey: ['anomaly', submissionId],
+    queryFn: () => getAnomalyCheck(submissionId),
+    staleTime: 30_000,
+  })
+  if (!data?.warnings?.length) return null
+  return (
+    <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+      <p className="text-xs font-semibold text-amber-800 mb-1">⚠ Data anomaly detected — please review before submitting</p>
+      <ul className="text-xs text-amber-700 space-y-0.5 list-disc list-inside">
+        {data.warnings.map((w, i) => <li key={i}>{w}</li>)}
+      </ul>
+    </div>
+  )
+}
 
 export default function SubmissionsPage() {
   const { canApprove: _canApprove, isClerk, isDCROP, isCROP, isRROP, isHQClerk, isRegistrar } = useAuth()
@@ -94,7 +165,36 @@ export default function SubmissionsPage() {
           <p className="text-gray-500 mt-1">Monthly ID statistics submissions</p>
         </div>
         {isFieldStaff && (
-          <Link to="/submissions/new" className="btn-primary">+ New Submission</Link>
+          <div className="flex gap-2 flex-wrap">
+            <Link to="/submissions/new" className="btn-primary">+ New Submission</Link>
+            <a
+              href={getBulkTemplateUrl()}
+              download="nrsms_bulk_template.xlsx"
+              className="btn-secondary text-sm"
+            >
+              Download Template
+            </a>
+            <label className="btn-secondary text-sm cursor-pointer">
+              Bulk Upload
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  try {
+                    const result = await bulkUpload(f)
+                    alert(`Created ${result.created} submission(s) from ${result.results.length} row(s).`)
+                    qc.invalidateQueries({ queryKey: ['submissions'] })
+                  } catch {
+                    alert('Upload failed — check the file matches the template.')
+                  }
+                  e.target.value = ''
+                }}
+              />
+            </label>
+          </div>
         )}
       </div>
 
@@ -351,6 +451,10 @@ export default function SubmissionsPage() {
                         {sub.notes && (
                           <p className="mt-3 text-xs text-gray-500 italic">Notes: {sub.notes}</p>
                         )}
+                        {isFieldStaff && sub.status === 'draft' && (
+                          <AnomalyBanner submissionId={sub.id} />
+                        )}
+                        <CommentsThread submissionId={sub.id} />
                       </td>
                     </tr>
                   )}

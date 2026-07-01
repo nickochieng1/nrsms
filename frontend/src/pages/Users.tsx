@@ -15,6 +15,7 @@ const schema = z.object({
   email:     z.string().email(),
   password:  z.string().min(6),
   role:      z.enum(['clerk', 'registrar', 'director', 'dcrop', 'crop', 'rrop', 'hq_clerk']),
+  phone:     z.string().optional(),
   region:    z.string().optional(),
   county:    z.string().optional(),
   subcounty: z.string().optional(),
@@ -57,6 +58,7 @@ export default function UsersPage() {
       ...v,
       region:    needsRegion    ? (v.region    || null) : null,
       county:    needsCounty    ? (v.county    || null) : null,
+      phone:     v.phone || null,
       subcounty: needsSubcounty ? (v.subcounty || null) : null,
       station_id: null,
     }),
@@ -149,6 +151,10 @@ export default function UsersPage() {
               <label className="label">Initial Password</label>
               <input type="password" className="input" {...register('password')} />
               {errors.password && <p className="text-xs text-red-600 mt-1">{errors.password.message}</p>}
+            </div>
+            <div>
+              <label className="label">Phone number <span className="text-gray-400 font-normal">(for SMS alerts)</span></label>
+              <input type="tel" className="input" placeholder="+254..." {...register('phone')} />
             </div>
             <div>
               <label className="label">Role</label>
