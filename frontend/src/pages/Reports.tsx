@@ -52,18 +52,21 @@ export default function ReportsPage() {
   // Subcounties come from station names within the selected county
   const subcounties = [...new Set((stations ?? []).filter((s) => s.county === county).map((s) => s.name))].sort()
 
-  // Pass the most specific non-empty scope to the API
-  const activeRegion   = stationId ? undefined : (county ? undefined : (region || undefined))
-  const activeCounty   = stationId ? undefined : (county || undefined)
+  // All three geographic filters are independent and additive —
+  // region + county + subcounty can all be active at the same time.
+  const activeRegion    = stationId ? undefined : (region    || undefined)
+  const activeCounty    = stationId ? undefined : (county    || undefined)
   const activeSubcounty = subcounty || undefined
 
+  const qKey = ['report', year, quarter, month, stationId, activeRegion, activeCounty, activeSubcounty]
+
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, quarter, month, stationId, activeCounty, activeRegion, activeSubcounty],
-    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter, month),
+    queryKey: ['report', 'summary', ...qKey],
+    queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter, month, activeSubcounty),
   })
 
   const { data: breakdown } = useQuery({
-    queryKey: ['report', 'breakdown', year, month, quarter, activeRegion, activeCounty, activeSubcounty],
+    queryKey: ['report', 'breakdown', ...qKey],
     queryFn: () => getBreakdownReport(year, month, quarter, activeRegion, activeCounty, activeSubcounty),
   })
 
@@ -659,50 +662,89 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* ── Subcounty Breakdown Table ── */}
-          {breakdown && breakdown.rows.length > 0 && (
-            <div className="card mt-6 p-0 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-200 bg-gray-50">
-                <h2 className="text-sm font-semibold text-gray-900">
-                  Breakdown by Region / County / Subcounty
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  This table shows exactly which area each figure comes from.
-                  If you submitted data for "Teso Central", look for it under its county in this table.
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Region</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">County</th>
-                      <th className="text-left px-4 py-2 font-medium text-gray-600">Subcounty</th>
-                      <th className="text-right px-4 py-2 font-medium text-blue-600">Applications</th>
-                      <th className="text-right px-4 py-2 font-medium text-green-600">IDs Received</th>
-                      <th className="text-right px-4 py-2 font-medium text-red-600">Rejections</th>
-                      <th className="text-right px-4 py-2 font-medium text-emerald-600">Collected</th>
-                      <th className="text-right px-4 py-2 font-medium text-gray-500">Submissions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {breakdown.rows.map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-2 text-gray-500 text-xs">{row.region}</td>
-                        <td className="px-4 py-2 text-gray-700 font-medium">{row.county}</td>
-                        <td className="px-4 py-2 text-gray-800 font-semibold">{row.subcounty}</td>
-                        <td className="px-4 py-2 text-right text-blue-700">{row.applications.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right text-red-700">{row.rejections.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right text-emerald-700">{row.collected.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right text-gray-400">{row.submissions}</td>
+          {/* ── Hierarchical Breakdown: Region → County → Subcounty ── */}
+          {breakdown && breakdown.rows.length > 0 && (() => {
+            // Group rows into Region → County → [Subcounties]
+            const tree: Record<string, Record<string, typeof breakdown.rows>> = {}
+            for (const row of breakdown.rows) {
+              if (!tree[row.region]) tree[row.region] = {}
+              if (!tree[row.region][row.county]) tree[row.region][row.county] = []
+              tree[row.region][row.county].push(row)
+            }
+            const sum = (rows: typeof breakdown.rows, key: keyof typeof breakdown.rows[0]) =>
+              rows.reduce((a, r) => a + Number(r[key]), 0)
+
+            return (
+              <div className="card mt-6 p-0 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900">Regional Breakdown</h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Region → County → Subcounty — data shows only what is approved for the selected period and scope.
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600 w-64">Area</th>
+                        <th className="text-right px-4 py-2 font-medium text-blue-600">Applications</th>
+                        <th className="text-right px-4 py-2 font-medium text-green-600">IDs Received</th>
+                        <th className="text-right px-4 py-2 font-medium text-red-600">Rejections</th>
+                        <th className="text-right px-4 py-2 font-medium text-emerald-600">Collected</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {Object.entries(tree).sort(([a], [b]) => a.localeCompare(b)).map(([rgn, counties]) => {
+                        const rgnRows = Object.values(counties).flat()
+                        return (
+                          <>
+                            {/* Region row */}
+                            <tr key={`r-${rgn}`} className="bg-primary-50 border-t-2 border-primary-200">
+                              <td className="px-4 py-2 font-bold text-primary-900 text-sm">{rgn}</td>
+                              {['applications','ids_received','rejections','collected'].map(k => (
+                                <td key={k} className="px-4 py-2 text-right font-bold text-primary-900">
+                                  {sum(rgnRows, k as any).toLocaleString()}
+                                </td>
+                              ))}
+                            </tr>
+                            {Object.entries(counties).sort(([a], [b]) => a.localeCompare(b)).map(([cty, subrows]) => (
+                              <>
+                                {/* County row */}
+                                <tr key={`c-${rgn}-${cty}`} className="bg-gray-50 border-t border-gray-200">
+                                  <td className="px-4 py-2 font-semibold text-gray-800 pl-8">
+                                    <span className="text-gray-400 mr-1">└</span>{cty} County
+                                  </td>
+                                  {['applications','ids_received','rejections','collected'].map(k => (
+                                    <td key={k} className="px-4 py-2 text-right font-semibold text-gray-700">
+                                      {sum(subrows, k as any).toLocaleString()}
+                                    </td>
+                                  ))}
+                                </tr>
+                                {/* Subcounty rows */}
+                                {subrows.sort((a, b) => a.subcounty.localeCompare(b.subcounty)).map((row, i) => (
+                                  <tr key={`s-${rgn}-${cty}-${i}`} className="hover:bg-blue-50 border-t border-gray-100">
+                                    <td className="px-4 py-2 text-gray-700 pl-16">
+                                      <span className="text-gray-300 mr-1">└</span>{row.subcounty}
+                                    </td>
+                                    <td className="px-4 py-2 text-right text-blue-700">{row.applications.toLocaleString()}</td>
+                                    <td className="px-4 py-2 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
+                                    <td className="px-4 py-2 text-right text-red-700">{row.rejections.toLocaleString()}</td>
+                                    <td className="px-4 py-2 text-right text-emerald-700">{row.collected.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                              </>
+                            ))}
+                          </>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </>
       )}
     </div>

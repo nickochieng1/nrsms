@@ -8,9 +8,10 @@ export async function getSummaryReport(
   region?: string,
   quarter?: number,
   month?: number,
+  subcounty?: string,
 ): Promise<SummaryReport> {
   const { data } = await apiClient.get<SummaryReport>('/reports/summary', {
-    params: { year, station_id, county, region, quarter, month },
+    params: { year, station_id, county, region, quarter, month, subcounty },
   })
   return data
 }
