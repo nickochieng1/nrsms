@@ -1,0 +1,42 @@
+name: Send monthly statistics bulletin
+
+on:
+  schedule:
+    # 06:00 EAT on the 6th of each month (03:00 UTC) — data for the
+    # previous month should be fully approved by then (deadline was the 3rd).
+    - cron: '0 3 6 * *'
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Year (defaults to current)'
+        required: false
+      month:
+        description: 'Month 1-12 (defaults to previous month)'
+        required: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve period (previous month by default)
+        id: period
+        run: |
+          YEAR="${{ github.event.inputs.year }}"
+          MONTH="${{ github.event.inputs.month }}"
+          if [ -z "$YEAR" ] || [ -z "$MONTH" ]; then
+            # Default: previous calendar month
+            YEAR=$(date -d "$(date +%Y-%m-01) -1 month" +%Y)
+            MONTH=$(date -d "$(date +%Y-%m-01) -1 month" +%-m)
+          fi
+          echo "year=$YEAR" >> $GITHUB_OUTPUT
+          echo "month=$MONTH" >> $GITHUB_OUTPUT
+          echo "Sending bulletin for $YEAR-$MONTH"
+
+      - name: Generate and email the bulletin
+        run: |
+          curl -sf -X POST \
+            "https://nrsms-46e3.onrender.com/api/v1/reports/send-bulletin?year=${{ steps.period.outputs.year }}&month=${{ steps.period.outputs.month }}" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            | tee /tmp/bulletin_result.json
+          echo "Result: $(cat /tmp/bulletin_result.json)"

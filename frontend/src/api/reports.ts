@@ -75,6 +75,21 @@ export async function getBreakdownReport(
   return data
 }
 
+export interface TimelinessRow {
+  area: string
+  months: Record<string, 'on_time' | 'late' | 'missing'>
+}
+
+export async function getTimelinessReport(
+  year: number, region?: string, county?: string,
+): Promise<{ year: number; areas: TimelinessRow[] }> {
+  const params: Record<string, string | number> = { year }
+  if (region) params.region = region
+  if (county) params.county = county
+  const { data } = await apiClient.get('/reports/timeliness', { params })
+  return data
+}
+
 export async function getLeagueTable(
   year: number, month?: number, quarter?: number,
   region?: string, metric = 'applications',

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -254,6 +254,68 @@ def breakdown_report(
         })
 
     return {"year": year, "month": month, "quarter": quarter, "rows": rows}
+
+
+@router.get("/timeliness")
+def timeliness_report(
+    year: int = Query(...),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP,
+    )),
+):
+    """Calendar heatmap: for each region/county, show which months have
+    on-time, late, or missing approved data.  On-time = approved_at before
+    the 3rd of the following month.  Returns a matrix keyed by area name."""
+    from datetime import date
+    eff_region = region or (current_user.region if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP) else None)
+    eff_county = county or (current_user.county if current_user.role == UserRole.CROP else None)
+
+    q = db.query(
+        Submission.region, Submission.county,
+        Submission.period_month, Submission.approved_at,
+        func.count(Submission.id),
+    ).filter(
+        Submission.period_year == year,
+        Submission.status.in_(REPORTABLE),
+    )
+    if eff_region:
+        q = q.filter(func.lower(Submission.region) == eff_region.lower())
+    if eff_county:
+        q = q.filter(func.lower(Submission.county) == eff_county.lower())
+
+    rows = q.group_by(Submission.region, Submission.county, Submission.period_month, Submission.approved_at).all()
+
+    # Build matrix: {area_label: {month: status}}
+    matrix: dict = {}
+    for rgn, cty, m, approved_at, cnt in rows:
+        area = f"{cty} ({rgn})" if cty else (rgn or "Unknown")
+        if area not in matrix:
+            matrix[area] = {}
+        if m not in matrix[area] or matrix[area][m] == "missing":
+            # Deadline = 3rd of month m+1 (or Jan of next year for Dec)
+            deadline_month = m % 12 + 1
+            deadline_year = year + 1 if m == 12 else year
+            deadline = date(deadline_year, deadline_month, 3)
+            if approved_at is None:
+                status = "missing"
+            else:
+                status = "on_time" if approved_at.date() <= deadline else "late"
+            matrix[area][m] = status
+
+    # All areas need all 12 months — fill missing as "missing"
+    areas = sorted(matrix.keys())
+    result = []
+    for area in areas:
+        months = {}
+        for mo in range(1, 13):
+            months[str(mo)] = matrix[area].get(mo, "missing")
+        result.append({"area": area, "months": months})
+
+    return {"year": year, "areas": result}
 
 
 @router.get("/league-table")
@@ -552,6 +614,59 @@ def top_counties_report(
 
 def _get_station_lookup(db: Session) -> dict:
     return {s.id: s for s in db.query(Station).all()}
+
+
+@router.post("/send-bulletin")
+def send_bulletin(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    db: Session = Depends(get_db),
+    x_cron_secret: str = Header(default=""),
+):
+    """Generate and email the monthly PDF bulletin to all active Directors
+    and Registrars. Called by the GitHub Actions cron on the 6th of each
+    month via the CRON_SECRET header (no user session available from cron)."""
+    from app.core.config import settings as cfg
+    if not cfg.CRON_SECRET or x_cron_secret != cfg.CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid or missing cron secret")
+
+    from app.services.email import send_email
+    from app.services.export import build_pdf_report, build_region_county_data
+
+    MONTH_NAMES = ["January","February","March","April","May","June",
+                   "July","August","September","October","November","December"]
+    period = f"{MONTH_NAMES[month-1]} {year}"
+
+    # Generate the summary PDF
+    rows = _query_submissions(db, year, month, None)
+    lookup = _get_station_lookup(db)
+    data = build_region_county_data(rows, lookup, year, month)
+    pdf_bytes = build_pdf_report(year, month, data)
+    filename = f"NRB_Monthly_Report_{year}_{month:02d}.pdf"
+
+    # Send to all active Directors and Registrars
+    targets = db.query(User).filter(
+        User.role.in_([UserRole.DIRECTOR, UserRole.REGISTRAR]),
+        User.is_active.is_(True),
+    ).all()
+    emails = [u.email for u in targets if u.email]
+    if not emails:
+        return {"sent": 0, "detail": "No active Director/Registrar accounts found"}
+
+    body = (
+        f"Please find attached the NRB Monthly Statistics Report for {period}.\n\n"
+        f"This bulletin was generated automatically on the 6th of the month.\n"
+        f"Log in to the system for interactive breakdowns: https://nrsms.netlify.app\n\n"
+        f"— NRSMS Automated Reporting"
+    )
+    ok = send_email(
+        emails,
+        f"[NRSMS] Monthly Statistics Report — {period}",
+        body,
+        attachment=pdf_bytes,
+        attachment_name=filename,
+    )
+    return {"sent": len(emails) if ok else 0, "period": period, "filename": filename}
 
 
 def _query_submissions(db, year: int, month: int | None, station_id: int | None, quarter: int | None = None):

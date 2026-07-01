@@ -37,3 +37,24 @@
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
 }
+
+@media print {
+  /* Hide everything that isn't report content */
+  aside, nav, [data-noprint],
+  button, select, input, .badge[class*="bg-blue"],
+  .fixed { display: none !important; }
+
+  /* Clean up card styles */
+  .card { box-shadow: none !important; border: 1px solid #e5e7eb !important; break-inside: avoid; }
+
+  /* Full width, white background */
+  body, #root { background: white !important; }
+  .flex { display: block !important; }
+  .flex-1, main { width: 100% !important; padding: 0 !important; }
+
+  /* Keep charts readable */
+  .recharts-wrapper svg { max-width: 100%; }
+
+  /* Page break helpers */
+  .card + .card { break-before: auto; }
+}

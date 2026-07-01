@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl,
-  getBreakdownReport, getLeagueTable,
+  getBreakdownReport, getLeagueTable, getTimelinessReport,
 } from '@/api/reports'
 import { KenyaMap } from '@/components/reports/KenyaMap'
 import { getStations } from '@/api/stations'
@@ -62,6 +62,10 @@ export default function ReportsPage() {
   const [month, setMonth] = useState<number | undefined>(undefined)
   const [leagueMetric, setLeagueMetric] = useState<'applications' | 'ids_received' | 'completeness'>('applications')
   const canViewLeague = isDirector || isRegistrar || isRROP || isHQClerk
+
+  // Multi-period comparison
+  const [compareMonth, setCompareMonth] = useState<number | undefined>(undefined)
+  const [compareYear, setCompareYear] = useState<number>(new Date().getFullYear() - 1)
   // Pre-populate scope filters from user profile so each role starts
   // seeing only their area; they can narrow further but backend enforces scope.
   const [region, setRegion] = useState<string>(user?.region ?? '')
@@ -105,6 +109,19 @@ export default function ReportsPage() {
     enabled: canViewLeague,
   })
 
+  const { data: timeliness } = useQuery({
+    queryKey: ['report', 'timeliness', year, activeRegion, activeCounty],
+    queryFn: () => getTimelinessReport(year, activeRegion, activeCounty),
+    enabled: canViewLeague,
+  })
+
+  // Comparison report — same scope, different period
+  const { data: compareReport } = useQuery({
+    queryKey: ['report', 'summary', 'compare', compareYear, compareMonth, activeRegion, activeCounty, activeSubcounty],
+    queryFn: () => getSummaryReport(compareYear, stationId, activeCounty, activeRegion, undefined, compareMonth, activeSubcounty),
+    enabled: compareMonth != null,
+  })
+
   function handleRegionChange(r: string) {
     setRegion(r)
     setCounty('')
@@ -126,12 +143,25 @@ export default function ReportsPage() {
       ? (county ? `${county} County, ${region}` : region)
       : 'All Regions'
 
+  const MONTH_SHORT_TO_NUM: Record<string, number> = {
+    Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12
+  }
+
   const monthlyBarData = report?.monthly.map((m) => ({
     name: m.month_name as string,
     Applications:   (m['app_grand_total'] as number) ?? 0,
     'IDs Received': (m['ids_grand_total'] as number) ?? 0,
     Rejections:     (m['rej_grand_total'] as number) ?? 0,
   })) ?? []
+
+  function handleBarClick(data: any) {
+    const name: string = data?.activeLabel ?? ''
+    const num = MONTH_SHORT_TO_NUM[name]
+    if (!num) return
+    // Toggle — click the same month again to clear
+    setMonth(month === num ? undefined : num)
+    setQuarter(undefined)
+  }
 
   const collectedLineData = report?.monthly.map((m) => ({
     name: m.month_name as string,
@@ -237,8 +267,18 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
           <p className="text-gray-500 mt-1">NRB ID Statistics — {periodLabel} · <span className="font-medium text-primary-700">{scopeLabel}</span></p>
         </div>
-        {/* Export dropdown */}
-        <div className="flex items-center gap-2">
+        {/* Export + Print */}
+        <div className="flex items-center gap-2" data-noprint>
+          <button
+            onClick={() => window.print()}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+            title="Print / Save as PDF"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print
+          </button>
           <span className="text-sm font-medium text-gray-600">Export to:</span>
           <select
             className="input w-44 py-1.5"
@@ -420,8 +460,9 @@ export default function ReportsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             <div className="card">
               <h2 className="font-semibold text-gray-900 mb-4">Monthly Applications vs IDs vs Rejections</h2>
+              <p className="text-xs text-gray-400 mb-1">Click a bar to drill into that month · click again to clear</p>
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyBarData}>
+                <BarChart data={monthlyBarData} onClick={handleBarClick} style={{ cursor: 'pointer' }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
@@ -448,6 +489,93 @@ export default function ReportsPage() {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          {/* ── Multi-period comparison ── */}
+          <div className="card mt-6">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Compare with another period</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Select a second period to compare side by side.</p>
+              </div>
+              <div className="flex items-center gap-2 ml-auto flex-wrap" data-noprint>
+                <select className="input py-1 text-sm" value={compareYear}
+                  onChange={e => setCompareYear(Number(e.target.value))}>
+                  {Array.from({length:8},(_,i) => new Date().getFullYear()-i).map(y=>(
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <select className="input py-1 text-sm" value={compareMonth ?? ''}
+                  onChange={e => setCompareMonth(e.target.value ? Number(e.target.value) : undefined)}>
+                  <option value="">— Pick month —</option>
+                  {MONTH_NAMES.map((m,i) => <option key={i+1} value={i+1}>{m}</option>)}
+                </select>
+                {compareMonth && (
+                  <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => setCompareMonth(undefined)}>✕ Clear</button>
+                )}
+              </div>
+            </div>
+
+            {compareReport && compareMonth && (() => {
+              const current = report?.totals
+              const compare = compareReport.totals
+              if (!current || !compare) return null
+              const diffPct = (a: number, b: number) => b === 0 ? null : Math.round((a-b)/b*100)
+              const pairs = [
+                { label: 'Applications',   cur: current.app_grand_total as number, cmp: compare.app_grand_total as number, color: 'blue' },
+                { label: 'IDs Received',   cur: current.ids_grand_total as number, cmp: compare.ids_grand_total as number, color: 'green' },
+                { label: 'Rejections',     cur: current.rej_grand_total as number, cmp: compare.rej_grand_total as number, color: 'red' },
+                { label: 'Collected IDs',  cur: current.collected_total as number, cmp: compare.collected_total as number, color: 'emerald' },
+              ]
+              const colorMap: Record<string,string> = {
+                blue:'text-blue-700', green:'text-green-700', red:'text-red-700', emerald:'text-emerald-700'
+              }
+              const barData = report!.monthly.map((m, i) => ({
+                name: m.month_name as string,
+                Current:  (m['app_grand_total'] as number) ?? 0,
+                Compare: (compareReport.monthly[i]?.['app_grand_total'] as number) ?? 0,
+              }))
+              return (
+                <div className="mt-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                    {pairs.map(p => {
+                      const d = diffPct(p.cur, p.cmp)
+                      return (
+                        <div key={p.label} className="bg-gray-50 rounded-lg p-3">
+                          <p className="text-xs text-gray-500 mb-1">{p.label}</p>
+                          <div className="flex gap-4 items-end">
+                            <div>
+                              <p className={`text-xl font-bold ${colorMap[p.color]}`}>{p.cur.toLocaleString()}</p>
+                              <p className="text-[10px] text-gray-400">{periodLabel}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-500">{p.cmp.toLocaleString()}</p>
+                              <p className="text-[10px] text-gray-400">{MONTH_NAMES[(compareMonth??1)-1]} {compareYear}</p>
+                            </div>
+                          </div>
+                          {d != null && (
+                            <p className={`text-xs mt-1 font-medium ${d >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              {d >= 0 ? '▲' : '▼'} {Math.abs(d)}% vs selected period
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Bar dataKey="Current" fill="#2563eb" radius={[2,2,0,0]} />
+                      <Bar dataKey="Compare" fill="#93c5fd" radius={[2,2,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )
+            })()}
           </div>
 
           {/* Tabbed monthly detail table */}
@@ -698,6 +826,67 @@ export default function ReportsPage() {
           </div>
 
           {/* ── Kenya County Choropleth Map ── */}
+          {/* ── Timeliness Calendar Heatmap ── */}
+          {canViewLeague && timeliness && timeliness.areas.length > 0 && (() => {
+            const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            const COLOR: Record<string, string> = {
+              on_time: 'bg-emerald-500', late: 'bg-amber-400', missing: 'bg-gray-200'
+            }
+            const LABEL: Record<string, string> = {
+              on_time: 'On time (≤ 3rd)', late: 'Late (after 3rd)', missing: 'No data'
+            }
+            return (
+              <div className="card mt-6 p-0 overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-200 bg-gray-50">
+                  <h2 className="text-sm font-semibold text-gray-900">Data Timeliness — {year}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Each cell = one month. Green = approved before the 3rd-of-month deadline, Amber = late, Grey = no data yet.
+                  </p>
+                </div>
+                <div className="overflow-x-auto px-4 py-3">
+                  <table className="text-xs w-full">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-1 pr-4 font-medium text-gray-600 w-48">Area</th>
+                        {MO.map(m => (
+                          <th key={m} className="text-center py-1 w-10 font-medium text-gray-500">{m}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {timeliness.areas.map(row => (
+                        <tr key={row.area}>
+                          <td className="py-1.5 pr-4 text-gray-700 font-medium whitespace-nowrap truncate max-w-[180px]" title={row.area}>
+                            {row.area}
+                          </td>
+                          {Array.from({length: 12}, (_, i) => {
+                            const status = row.months[String(i+1)] ?? 'missing'
+                            return (
+                              <td key={i} className="py-1.5 text-center">
+                                <span
+                                  className={`inline-block w-7 h-5 rounded ${COLOR[status]} cursor-default`}
+                                  title={`${MO[i]}: ${LABEL[status]}`}
+                                />
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="flex items-center gap-4 mt-3 pt-2 border-t border-gray-100">
+                    {Object.entries(LABEL).map(([k, v]) => (
+                      <span key={k} className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <span className={`inline-block w-5 h-3 rounded ${COLOR[k]}`} />
+                        {v}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+
           {canViewLeague && league && league.rows.length > 0 && (
             <div className="card mt-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
