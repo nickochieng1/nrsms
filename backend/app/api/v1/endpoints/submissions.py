@@ -13,22 +13,10 @@ from app.schemas.submission import (
     SubmissionCreate, SubmissionOut, SubmissionRegionalStatusRow, SubmissionReview, SubmissionUpdate,
 )
 from app.services import audit as audit_svc
-from app.services.sms import notify_submission_action
 from app.services.validation import validate_submission
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 
-
-def _phones(db: Session, role: UserRole, region: str = None, county: str = None):
-    """Return phone numbers of active users matching role + optional scope."""
-    q = db.query(User.phone, User.full_name).filter(
-        User.role == role, User.is_active.is_(True), User.phone.isnot(None)
-    )
-    if region:
-        q = q.filter(func.lower(User.region) == region.lower())
-    if county:
-        q = q.filter(func.lower(User.county) == county.lower())
-    return [r.phone for r in q.all() if r.phone]
 
 # Statuses each downstream role can see once a submission has left DRAFT —
 # narrower than "everything" so e.g. a CROP in Mombasa never sees Kisumu's
@@ -312,12 +300,7 @@ def submit_submission(
     audit_svc.log(db, user_id=current_user.id, action="SUBMIT", resource="submission",
                   resource_id=submission_id, **meta)
     # Notify CROP(s) in the same county that data awaits review
-    from app.services.sms import send_sms
     period = f"{updated.period_month}/{updated.period_year}"
-    send_sms(
-        _phones(db, UserRole.CROP, region=sub.region, county=sub.county),
-        f"NRSMS: {sub.subcounty or sub.county} ({period}) has been submitted and is awaiting your approval.",
-    )
     return updated
 
 
@@ -338,26 +321,17 @@ def crop_review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting CROP review")
 
     meta = get_audit_meta(request)
-    from app.services.sms import send_sms
     period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.crop_approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="CROP_APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
-        send_sms(
-            _phones(db, UserRole.RROP, region=sub.region),
-            f"NRSMS: {sub.county} county data ({period}) has been approved by CROP and is now awaiting your regional review.",
-        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
         updated = crud_sub.crop_reject(db, sub, current_user.id, body.rejection_reason)
         audit_svc.log(db, user_id=current_user.id, action="CROP_REJECT", resource="submission",
                       resource_id=submission_id, new_value={"reason": body.rejection_reason}, **meta)
-        send_sms(
-            _phones(db, UserRole.DCROP, region=sub.region, county=sub.county),
-            f"NRSMS: Your {sub.subcounty or sub.county} submission ({period}) was rejected. Reason: {body.rejection_reason[:100]}. Please correct and resubmit.",
-        )
     else:
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
     return updated
@@ -380,26 +354,17 @@ def rrop_review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting RROP review")
 
     meta = get_audit_meta(request)
-    from app.services.sms import send_sms
     period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.rrop_approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="RROP_APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
-        send_sms(
-            _phones(db, UserRole.HQ_CLERK, region=sub.region),
-            f"NRSMS: {sub.region} data ({period}) has been RROP-approved and is ready for HQ compilation.",
-        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
         updated = crud_sub.rrop_reject(db, sub, current_user.id, body.rejection_reason)
         audit_svc.log(db, user_id=current_user.id, action="RROP_REJECT", resource="submission",
                       resource_id=submission_id, new_value={"reason": body.rejection_reason}, **meta)
-        send_sms(
-            _phones(db, UserRole.CROP, region=sub.region, county=sub.county),
-            f"NRSMS: {sub.county} county data ({period}) was returned by RROP. Reason: {body.rejection_reason[:100]}",
-        )
     else:
         raise HTTPException(status_code=400, detail="action must be 'approve' or 'reject'")
     return updated
@@ -443,16 +408,11 @@ def review_submission(
         raise HTTPException(status_code=400, detail="This submission is not awaiting registrar review")
 
     meta = get_audit_meta(request)
-    from app.services.sms import send_sms
     period = f"{sub.period_month}/{sub.period_year}"
     if body.action == "approve":
         updated = crud_sub.approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
                       resource_id=submission_id, **meta)
-        send_sms(
-            _phones(db, UserRole.RROP, region=sub.region),
-            f"NRSMS: {sub.region} ({period}) has been finally approved and is now visible in the Director's reports.",
-        )
     elif body.action == "reject":
         if not body.rejection_reason:
             raise HTTPException(status_code=400, detail="rejection_reason is required")
