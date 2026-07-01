@@ -36,6 +36,7 @@ def on_startup():
     _migrate_audit_log_schema()
     _migrate_fk_nullability()
     _migrate_submission_hierarchy()
+    _normalize_enum_case()
     _seed_superuser()
     _seed_stations()
 
@@ -358,6 +359,23 @@ def _migrate_submission_hierarchy():
         """))
         conn.execute(text("UPDATE submissions SET status = 'dcrop_submitted' WHERE status = 'submitted'"))
         conn.execute(text("UPDATE submissions SET status = 'draft' WHERE status = 'rejected'"))
+        conn.commit()
+
+
+def _normalize_enum_case():
+    """SQLAlchemy's Enum(native_enum=False) stores the member NAME ('APPROVED')
+    not the VALUE ('approved') unless values_callable is set.  Now that we
+    have added values_callable, new writes will use the lowercase value — but
+    any rows written before this fix need to be normalised.  This is a safe
+    idempotent UPDATE: LOWER('approved') == 'approved' so running it twice
+    is a no-op for already-correct rows.
+    """
+    from sqlalchemy import text
+    if settings.DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        conn.execute(text("UPDATE users SET role = LOWER(role) WHERE role != LOWER(role)"))
+        conn.execute(text("UPDATE submissions SET status = LOWER(status) WHERE status != LOWER(status)"))
         conn.commit()
 
 

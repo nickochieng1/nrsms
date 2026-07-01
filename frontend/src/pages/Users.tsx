@@ -157,7 +157,6 @@ export default function UsersPage() {
                   <option value="dcrop">DCROP (Deputy County Registrar)</option>
                   <option value="crop">CROP (County Registrar)</option>
                   <option value="rrop">RROP (Regional Registrar)</option>
-                  <option value="clerk">Clerk (legacy)</option>
                 </optgroup>
                 <optgroup label="Headquarters">
                   <option value="hq_clerk">HQ Clerk</option>

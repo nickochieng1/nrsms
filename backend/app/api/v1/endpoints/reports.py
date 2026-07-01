@@ -83,26 +83,33 @@ def summary_report(
     county: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP,
+    )),
 ):
     months = [month] if month else _quarter_months(quarter)
+
+    # Auto-apply geographic scope from the user's profile so each role
+    # only ever sees data within their assigned area by default.
+    # Explicit query params can narrow it further but cannot widen scope.
+    eff_region   = region   or (current_user.region   if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP) else None)
+    eff_county   = county   or (current_user.county   if current_user.role in (UserRole.CROP, UserRole.DCROP) else None)
+    eff_subcounty = subcounty or (current_user.subcounty if current_user.role == UserRole.DCROP else None)
 
     q = db.query(Submission).filter(
         Submission.period_year == year,
         Submission.period_month.in_(months),
         Submission.status.in_(REPORTABLE),
     )
-    # Direct field match — works for both legacy station-based submissions
-    # (backfilled with county/region at migration time) and new DCROP
-    # submissions (which never have a station_id at all).
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
-    if subcounty:
-        q = q.filter(func.lower(Submission.subcounty) == subcounty.lower())
-    if county:
-        q = q.filter(func.lower(Submission.county) == county.lower())
-    if region:
-        q = q.filter(func.lower(Submission.region) == region.lower())
+    if eff_subcounty:
+        q = q.filter(func.lower(Submission.subcounty) == eff_subcounty.lower())
+    if eff_county:
+        q = q.filter(func.lower(Submission.county) == eff_county.lower())
+    if eff_region:
+        q = q.filter(func.lower(Submission.region) == eff_region.lower())
 
     rows = q.all()
     monthly = {m: _zero_month() for m in months}
@@ -343,7 +350,9 @@ def top_counties_report(
     quarter: Optional[int] = Query(None, ge=1, le=4),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR, UserRole.RROP, UserRole.HQ_CLERK,
+    )),
 ):
     """Top counties by registration volume — station submissions (applications) only.
     Usajili Mashinani is reported separately (see /reports/mobile-summary) and is not
@@ -390,7 +399,10 @@ def _query_submissions(db, year: int, month: int | None, station_id: int | None,
 
 
 def _export_role_deps():
-    return require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)
+    return require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP,
+    )
 
 
 @router.get("/excel")

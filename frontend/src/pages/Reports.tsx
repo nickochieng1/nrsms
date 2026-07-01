@@ -28,12 +28,14 @@ const QUARTER_LABELS: Record<number, string> = {
 }
 
 export default function ReportsPage() {
-  const { isDirector } = useAuth()
+  const { user, isDirector } = useAuth()
   const [year, setYear] = useState(new Date().getFullYear())
   const [quarter, setQuarter] = useState<number | undefined>(undefined)
   const [month, setMonth] = useState<number | undefined>(undefined)
-  const [region, setRegion] = useState<string>('')
-  const [county, setCounty] = useState<string>('')
+  // Pre-populate scope filters from user profile so each role starts
+  // seeing only their area; they can narrow further but backend enforces scope.
+  const [region, setRegion] = useState<string>(user?.region ?? '')
+  const [county, setCounty] = useState<string>(user?.county ?? '')
   const [stationId, setStationId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<DetailTab>('app')
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf' | 'word' | 'csv' | null>(null)

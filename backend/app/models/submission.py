@@ -65,7 +65,8 @@ class Submission(Base):
     period_month: Mapped[int] = mapped_column(Integer)
     period_year: Mapped[int] = mapped_column(Integer)
     status: Mapped[SubmissionStatus] = mapped_column(
-        Enum(SubmissionStatus, native_enum=False), default=SubmissionStatus.DRAFT
+        Enum(SubmissionStatus, native_enum=False, values_callable=lambda obj: [e.value for e in obj]),
+        default=SubmissionStatus.DRAFT
     )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
