@@ -157,29 +157,7 @@ def summary_report(
     }
 
 
-@router.get("/breakdown")
-def breakdown_report(
-    year: int = Query(...),
-    month: Optional[int] = Query(None, ge=1, le=12),
-    quarter: Optional[int] = Query(None, ge=1, le=4),
-    region: Optional[str] = Query(None),
-    county: Optional[str] = Query(None),
-    subcounty: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.REGISTRAR, UserRole.DIRECTOR,
-        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP,
-    )),
-):
-    """Per-county/subcounty breakdown of key statistics — shows the user
-    exactly which area each figure comes from so 'Teso Central' is visible
-    within 'Busia County' rather than buried in a grand total."""
-    months = [month] if month else _quarter_months(quarter)
-
-    eff_region   = region   or (current_user.region   if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP) else None)
-    eff_county   = county   or (current_user.county   if current_user.role in (UserRole.CROP, UserRole.DCROP) else None)
-    eff_subcounty = subcounty or (current_user.subcounty if current_user.role == UserRole.DCROP else None)
-
+def _breakdown_query(db, months: List[int], year: int, eff_region, eff_county, eff_subcounty):
     q = db.query(
         Submission.region, Submission.county, Submission.subcounty,
         func.sum(Submission.app_grand_total),
@@ -198,21 +176,155 @@ def breakdown_report(
         q = q.filter(func.lower(Submission.county) == eff_county.lower())
     if eff_subcounty:
         q = q.filter(func.lower(Submission.subcounty) == eff_subcounty.lower())
-
-    rows = q.group_by(Submission.region, Submission.county, Submission.subcounty).all()
-
     return {
-        "year": year, "month": month, "quarter": quarter,
-        "rows": [
-            {
-                "region": r or "—", "county": c or "—", "subcounty": s or "—",
-                "applications": int(a or 0), "ids_received": int(ids or 0),
-                "rejections": int(rej or 0), "collected": int(col or 0),
-                "submissions": int(cnt),
-            }
-            for r, c, s, a, ids, rej, col, cnt in sorted(rows, key=lambda x: (x[0] or "", x[1] or "", x[2] or ""))
-        ],
+        (r, c, s): (int(a or 0), int(ids or 0), int(rej or 0), int(col or 0), int(cnt))
+        for r, c, s, a, ids, rej, col, cnt in
+        q.group_by(Submission.region, Submission.county, Submission.subcounty).all()
     }
+
+
+@router.get("/breakdown")
+def breakdown_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP,
+    )),
+):
+    """Per-county/subcounty breakdown with year-on-year comparison and
+    data completeness rate (submitted vs expected subcounties per county)."""
+    months = [month] if month else _quarter_months(quarter)
+
+    eff_region    = region    or (current_user.region    if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP) else None)
+    eff_county    = county    or (current_user.county    if current_user.role in (UserRole.CROP, UserRole.DCROP) else None)
+    eff_subcounty = subcounty or (current_user.subcounty if current_user.role == UserRole.DCROP else None)
+
+    cur  = _breakdown_query(db, months, year,     eff_region, eff_county, eff_subcounty)
+    prev = _breakdown_query(db, months, year - 1, eff_region, eff_county, eff_subcounty)
+
+    # Data completeness: expected = active DCROPs per county, submitted = distinct subcounties with data
+    expected_q = (
+        db.query(User.region, User.county, func.count(User.id))
+        .filter(User.role == UserRole.DCROP, User.is_active.is_(True), User.county.isnot(None))
+    )
+    if eff_region:
+        expected_q = expected_q.filter(func.lower(User.region) == eff_region.lower())
+    if eff_county:
+        expected_q = expected_q.filter(func.lower(User.county) == eff_county.lower())
+    expected_per_county = {
+        (r, c): int(cnt) for r, c, cnt in expected_q.group_by(User.region, User.county).all()
+    }
+
+    submitted_per_county: dict = {}
+    for (r, c, s) in cur:
+        key = (r, c)
+        submitted_per_county.setdefault(key, set()).add(s)
+
+    all_keys = sorted(set(cur) | set(prev), key=lambda k: (k[0] or "", k[1] or "", k[2] or ""))
+
+    def pct_change(a: int, b: int) -> Optional[float]:
+        if b == 0:
+            return None
+        return round((a - b) / b * 100, 1)
+
+    rows = []
+    for key in all_keys:
+        r, c, s = key
+        ca, ci, cr, cc, cnt = cur.get(key, (0, 0, 0, 0, 0))
+        pa, pi, pr, pc, _   = prev.get(key, (0, 0, 0, 0, 0))
+        county_key = (r, c)
+        exp = expected_per_county.get(county_key, 0)
+        sub = len(submitted_per_county.get(county_key, set()))
+        rows.append({
+            "region": r or "—", "county": c or "—", "subcounty": s or "—",
+            "applications": ca, "ids_received": ci, "rejections": cr, "collected": cc,
+            "prior_applications": pa, "prior_ids_received": pi,
+            "app_change_pct": pct_change(ca, pa),
+            "ids_change_pct": pct_change(ci, pi),
+            "submissions": cnt,
+            "expected_subcounties": exp,
+            "submitted_subcounties": sub,
+            "completeness_pct": round(sub / exp * 100) if exp else None,
+        })
+
+    return {"year": year, "month": month, "quarter": quarter, "rows": rows}
+
+
+@router.get("/league-table")
+def league_table(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    region: Optional[str] = Query(None),
+    metric: str = Query("applications", description="applications | ids_received | completeness"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK,
+    )),
+):
+    """County ranking by chosen metric — current period vs prior year same period."""
+    months = [month] if month else _quarter_months(quarter)
+
+    eff_region = region or (current_user.region if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK) else None)
+
+    def county_totals(yr):
+        q = (
+            db.query(
+                Submission.region, Submission.county,
+                func.sum(Submission.app_grand_total),
+                func.sum(Submission.ids_grand_total),
+                func.count(func.distinct(Submission.subcounty)),
+            )
+            .filter(Submission.period_year == yr, Submission.period_month.in_(months), Submission.status.in_(REPORTABLE))
+        )
+        if eff_region:
+            q = q.filter(func.lower(Submission.region) == eff_region.lower())
+        return {
+            (r, c): (int(a or 0), int(ids or 0), int(sub or 0))
+            for r, c, a, ids, sub in q.group_by(Submission.region, Submission.county).all()
+        }
+
+    cur  = county_totals(year)
+    prev = county_totals(year - 1)
+
+    # DCROP expected per county
+    eq = db.query(User.region, User.county, func.count(User.id)).filter(
+        User.role == UserRole.DCROP, User.is_active.is_(True), User.county.isnot(None)
+    )
+    if eff_region:
+        eq = eq.filter(func.lower(User.region) == eff_region.lower())
+    expected = {(r, c): int(n) for r, c, n in eq.group_by(User.region, User.county).all()}
+
+    rows = []
+    for (r, c), (a, ids, sub) in cur.items():
+        pa, pids, _ = prev.get((r, c), (0, 0, 0))
+        exp = expected.get((r, c), 0)
+        comp = round(sub / exp * 100) if exp else None
+        score = a if metric == "applications" else ids if metric == "ids_received" else (comp or 0)
+        rows.append({
+            "region": r or "—", "county": c or "—",
+            "applications": a, "prior_applications": pa,
+            "ids_received": ids, "prior_ids_received": pids,
+            "submitted_subcounties": sub, "expected_subcounties": exp,
+            "completeness_pct": comp,
+            "app_change_pct": round((a - pa) / pa * 100, 1) if pa else None,
+            "_score": score,
+        })
+
+    rows.sort(key=lambda x: x["_score"], reverse=True)
+    for i, row in enumerate(rows):
+        row["rank"] = i + 1
+        del row["_score"]
+
+    return {"year": year, "month": month, "metric": metric, "rows": rows[:limit]}
 
 
 def _mobile_summary_data(

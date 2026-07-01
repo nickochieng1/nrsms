@@ -49,6 +49,16 @@ export const getCsvReportUrl = (year: number, month?: number, station_id?: numbe
 export interface BreakdownRow {
   region: string; county: string; subcounty: string
   applications: number; ids_received: number; rejections: number; collected: number; submissions: number
+  prior_applications: number; prior_ids_received: number
+  app_change_pct: number | null; ids_change_pct: number | null
+  expected_subcounties: number; submitted_subcounties: number; completeness_pct: number | null
+}
+
+export interface LeagueRow {
+  rank: number; region: string; county: string
+  applications: number; prior_applications: number; app_change_pct: number | null
+  ids_received: number; prior_ids_received: number
+  submitted_subcounties: number; expected_subcounties: number; completeness_pct: number | null
 }
 
 export async function getBreakdownReport(
@@ -62,6 +72,18 @@ export async function getBreakdownReport(
   if (county)    params.county   = county
   if (subcounty) params.subcounty = subcounty
   const { data } = await apiClient.get('/reports/breakdown', { params })
+  return data
+}
+
+export async function getLeagueTable(
+  year: number, month?: number, quarter?: number,
+  region?: string, metric = 'applications',
+): Promise<{ rows: LeagueRow[]; year: number; metric: string }> {
+  const params: Record<string, string | number> = { year, metric }
+  if (month)   params.month   = month
+  if (quarter) params.quarter = quarter
+  if (region)  params.region  = region
+  const { data } = await apiClient.get('/reports/league-table', { params })
   return data
 }
 

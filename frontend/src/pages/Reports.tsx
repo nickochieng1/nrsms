@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl,
-  getBreakdownReport,
+  getBreakdownReport, getLeagueTable,
 } from '@/api/reports'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
@@ -28,11 +28,39 @@ const QUARTER_LABELS: Record<number, string> = {
   4: 'Q4 (Oct – Dec)',
 }
 
+// ── Helper components ──────────────────────────────────────────────────────────
+function ChangeChip({ pct }: { pct: number | null | undefined }) {
+  if (pct == null) return <span className="text-gray-300 text-xs">—</span>
+  const up = pct >= 0
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${up ? 'text-emerald-600' : 'text-red-600'}`}>
+      {up ? '▲' : '▼'} {Math.abs(pct).toFixed(1)}%
+    </span>
+  )
+}
+
+function CompletenessBar({ pct, submitted, expected }: { pct: number | null; submitted: number; expected: number }) {
+  if (expected === 0) return <span className="text-gray-300 text-xs">No DCROPs</span>
+  const p = pct ?? 0
+  const color = p >= 80 ? 'bg-emerald-500' : p >= 50 ? 'bg-amber-400' : 'bg-red-400'
+  const text = p >= 80 ? 'text-emerald-700' : p >= 50 ? 'text-amber-700' : 'text-red-700'
+  return (
+    <div className="flex items-center gap-2 min-w-[120px]">
+      <div className="flex-1 bg-gray-100 rounded-full h-2">
+        <div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.min(p, 100)}%` }} />
+      </div>
+      <span className={`text-xs font-medium ${text} whitespace-nowrap`}>{submitted}/{expected}</span>
+    </div>
+  )
+}
+
 export default function ReportsPage() {
-  const { user, isDirector } = useAuth()
+  const { user, isDirector, isRegistrar, isRROP, isHQClerk } = useAuth()
   const [year, setYear] = useState(new Date().getFullYear())
   const [quarter, setQuarter] = useState<number | undefined>(undefined)
   const [month, setMonth] = useState<number | undefined>(undefined)
+  const [leagueMetric, setLeagueMetric] = useState<'applications' | 'ids_received' | 'completeness'>('applications')
+  const canViewLeague = isDirector || isRegistrar || isRROP || isHQClerk
   // Pre-populate scope filters from user profile so each role starts
   // seeing only their area; they can narrow further but backend enforces scope.
   const [region, setRegion] = useState<string>(user?.region ?? '')
@@ -68,6 +96,12 @@ export default function ReportsPage() {
   const { data: breakdown } = useQuery({
     queryKey: ['report', 'breakdown', ...qKey],
     queryFn: () => getBreakdownReport(year, month, quarter, activeRegion, activeCounty, activeSubcounty),
+  })
+
+  const { data: league } = useQuery({
+    queryKey: ['report', 'league', year, month, quarter, activeRegion, leagueMetric],
+    queryFn: () => getLeagueTable(year, month, quarter, activeRegion, leagueMetric),
+    enabled: canViewLeague,
   })
 
   function handleRegionChange(r: string) {
@@ -662,80 +696,86 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* ── Hierarchical Breakdown: Region → County → Subcounty ── */}
+          {/* ── Hierarchical Breakdown with YoY + Completeness ── */}
           {breakdown && breakdown.rows.length > 0 && (() => {
-            // Group rows into Region → County → [Subcounties]
             const tree: Record<string, Record<string, typeof breakdown.rows>> = {}
             for (const row of breakdown.rows) {
               if (!tree[row.region]) tree[row.region] = {}
               if (!tree[row.region][row.county]) tree[row.region][row.county] = []
               tree[row.region][row.county].push(row)
             }
-            const sum = (rows: typeof breakdown.rows, key: keyof typeof breakdown.rows[0]) =>
-              rows.reduce((a, r) => a + Number(r[key]), 0)
+            const sumN = (rows: typeof breakdown.rows, key: keyof typeof breakdown.rows[0]) =>
+              rows.reduce((a, r) => a + Number(r[key] ?? 0), 0)
 
             return (
               <div className="card mt-6 p-0 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-900">Regional Breakdown</h2>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Region → County → Subcounty — data shows only what is approved for the selected period and scope.
-                    </p>
-                  </div>
+                <div className="px-5 py-3 border-b border-gray-200 bg-gray-50">
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    Regional Breakdown — {year} vs {year - 1}
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Arrows show year-on-year change. Completeness bar = subcounties submitted out of DCROPs expected.
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="text-left px-4 py-2 font-medium text-gray-600 w-64">Area</th>
+                        <th className="text-left px-4 py-2 font-medium text-gray-600 w-56">Area</th>
                         <th className="text-right px-4 py-2 font-medium text-blue-600">Applications</th>
+                        <th className="text-right px-4 py-2 font-medium text-gray-400 text-xs">vs {year-1}</th>
                         <th className="text-right px-4 py-2 font-medium text-green-600">IDs Received</th>
-                        <th className="text-right px-4 py-2 font-medium text-red-600">Rejections</th>
-                        <th className="text-right px-4 py-2 font-medium text-emerald-600">Collected</th>
+                        <th className="text-right px-4 py-2 font-medium text-gray-400 text-xs">vs {year-1}</th>
+                        <th className="px-4 py-2 font-medium text-gray-600 text-xs">Completeness</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(tree).sort(([a], [b]) => a.localeCompare(b)).map(([rgn, counties]) => {
                         const rgnRows = Object.values(counties).flat()
+                        const rApp = sumN(rgnRows, 'applications')
+                        const rPApp = sumN(rgnRows, 'prior_applications')
+                        const rIds = sumN(rgnRows, 'ids_received')
+                        const rPIds = sumN(rgnRows, 'prior_ids_received')
+                        const rExp = sumN(rgnRows, 'expected_subcounties')
+                        const rSub = sumN(rgnRows, 'submitted_subcounties')
                         return (
                           <>
-                            {/* Region row */}
                             <tr key={`r-${rgn}`} className="bg-primary-50 border-t-2 border-primary-200">
-                              <td className="px-4 py-2 font-bold text-primary-900 text-sm">{rgn}</td>
-                              {['applications','ids_received','rejections','collected'].map(k => (
-                                <td key={k} className="px-4 py-2 text-right font-bold text-primary-900">
-                                  {sum(rgnRows, k as any).toLocaleString()}
-                                </td>
-                              ))}
+                              <td className="px-4 py-2.5 font-bold text-primary-900">{rgn}</td>
+                              <td className="px-4 py-2.5 text-right font-bold text-primary-900">{rApp.toLocaleString()}</td>
+                              <td className="px-4 py-2.5 text-right"><ChangeChip pct={rPApp ? Math.round((rApp-rPApp)/rPApp*100*10)/10 : null} /></td>
+                              <td className="px-4 py-2.5 text-right font-bold text-primary-900">{rIds.toLocaleString()}</td>
+                              <td className="px-4 py-2.5 text-right"><ChangeChip pct={rPIds ? Math.round((rIds-rPIds)/rPIds*100*10)/10 : null} /></td>
+                              <td className="px-4 py-2.5"><CompletenessBar pct={rExp ? Math.round(rSub/rExp*100) : null} submitted={rSub} expected={rExp} /></td>
                             </tr>
-                            {Object.entries(counties).sort(([a], [b]) => a.localeCompare(b)).map(([cty, subrows]) => (
-                              <>
-                                {/* County row */}
-                                <tr key={`c-${rgn}-${cty}`} className="bg-gray-50 border-t border-gray-200">
-                                  <td className="px-4 py-2 font-semibold text-gray-800 pl-8">
-                                    <span className="text-gray-400 mr-1">└</span>{cty} County
-                                  </td>
-                                  {['applications','ids_received','rejections','collected'].map(k => (
-                                    <td key={k} className="px-4 py-2 text-right font-semibold text-gray-700">
-                                      {sum(subrows, k as any).toLocaleString()}
-                                    </td>
-                                  ))}
-                                </tr>
-                                {/* Subcounty rows */}
-                                {subrows.sort((a, b) => a.subcounty.localeCompare(b.subcounty)).map((row, i) => (
-                                  <tr key={`s-${rgn}-${cty}-${i}`} className="hover:bg-blue-50 border-t border-gray-100">
-                                    <td className="px-4 py-2 text-gray-700 pl-16">
-                                      <span className="text-gray-300 mr-1">└</span>{row.subcounty}
-                                    </td>
-                                    <td className="px-4 py-2 text-right text-blue-700">{row.applications.toLocaleString()}</td>
-                                    <td className="px-4 py-2 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
-                                    <td className="px-4 py-2 text-right text-red-700">{row.rejections.toLocaleString()}</td>
-                                    <td className="px-4 py-2 text-right text-emerald-700">{row.collected.toLocaleString()}</td>
+                            {Object.entries(counties).sort(([a], [b]) => a.localeCompare(b)).map(([cty, subrows]) => {
+                              const cApp = sumN(subrows, 'applications'), cPApp = sumN(subrows, 'prior_applications')
+                              const cIds = sumN(subrows, 'ids_received'), cPIds = sumN(subrows, 'prior_ids_received')
+                              const exp = subrows[0]?.expected_subcounties ?? 0
+                              const sub = subrows[0]?.submitted_subcounties ?? 0
+                              return (
+                                <>
+                                  <tr key={`c-${cty}`} className="bg-gray-50 border-t border-gray-200">
+                                    <td className="px-4 py-2 font-semibold text-gray-800 pl-8"><span className="text-gray-300 mr-1">└</span>{cty} County</td>
+                                    <td className="px-4 py-2 text-right font-semibold text-gray-700">{cApp.toLocaleString()}</td>
+                                    <td className="px-4 py-2 text-right"><ChangeChip pct={cPApp ? Math.round((cApp-cPApp)/cPApp*100*10)/10 : null} /></td>
+                                    <td className="px-4 py-2 text-right font-semibold text-gray-700">{cIds.toLocaleString()}</td>
+                                    <td className="px-4 py-2 text-right"><ChangeChip pct={cPIds ? Math.round((cIds-cPIds)/cPIds*100*10)/10 : null} /></td>
+                                    <td className="px-4 py-2"><CompletenessBar pct={exp ? Math.round(sub/exp*100) : null} submitted={sub} expected={exp} /></td>
                                   </tr>
-                                ))}
-                              </>
-                            ))}
+                                  {subrows.sort((a, b) => a.subcounty.localeCompare(b.subcounty)).map((row, i) => (
+                                    <tr key={`s-${cty}-${i}`} className="hover:bg-blue-50 border-t border-gray-100">
+                                      <td className="px-4 py-2 text-gray-700 pl-16"><span className="text-gray-300 mr-1">└</span>{row.subcounty}</td>
+                                      <td className="px-4 py-2 text-right text-blue-700">{row.applications.toLocaleString()}</td>
+                                      <td className="px-4 py-2 text-right"><ChangeChip pct={row.app_change_pct} /></td>
+                                      <td className="px-4 py-2 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
+                                      <td className="px-4 py-2 text-right"><ChangeChip pct={row.ids_change_pct} /></td>
+                                      <td className="px-4 py-2 text-gray-400 text-xs">{row.submissions} submission(s)</td>
+                                    </tr>
+                                  ))}
+                                </>
+                              )
+                            })}
                           </>
                         )
                       })}
@@ -745,6 +785,67 @@ export default function ReportsPage() {
               </div>
             )
           })()}
+
+          {/* ── League Table ── */}
+          {canViewLeague && league && league.rows.length > 0 && (
+            <div className="card mt-6 p-0 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">County League Table</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Counties ranked by selected metric. ▲▼ shows year-on-year change.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Rank by:</span>
+                  {(['applications','ids_received','completeness'] as const).map(m => (
+                    <button key={m} onClick={() => setLeagueMetric(m)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${leagueMetric === m ? 'bg-primary-700 text-white border-primary-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      {m === 'applications' ? 'Applications' : m === 'ids_received' ? 'IDs Received' : 'Completeness'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-center px-4 py-2 font-medium text-gray-600 w-12">#</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">County</th>
+                      <th className="text-right px-4 py-2 font-medium text-blue-600">Applications</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-400 text-xs">vs {year-1}</th>
+                      <th className="text-right px-4 py-2 font-medium text-green-600">IDs Received</th>
+                      <th className="px-4 py-2 font-medium text-gray-600 text-xs">Completeness</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {league.rows.map((row) => {
+                      const medal = row.rank === 1 ? '🥇' : row.rank === 2 ? '🥈' : row.rank === 3 ? '🥉' : null
+                      return (
+                        <tr key={`${row.county}-${row.rank}`} className="hover:bg-gray-50">
+                          <td className="px-4 py-2.5 text-center font-bold text-gray-400">
+                            {medal ?? row.rank}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="font-medium text-gray-800">{row.county}</span>
+                            <span className="text-xs text-gray-400 ml-2">{row.region}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-blue-700 font-medium">{row.applications.toLocaleString()}</td>
+                          <td className="px-4 py-2.5 text-right"><ChangeChip pct={row.app_change_pct} /></td>
+                          <td className="px-4 py-2.5 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
+                          <td className="px-4 py-2.5">
+                            <CompletenessBar
+                              pct={row.completeness_pct}
+                              submitted={row.submitted_subcounties}
+                              expected={row.expected_subcounties}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
