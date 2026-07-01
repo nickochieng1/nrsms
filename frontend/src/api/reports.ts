@@ -45,6 +45,25 @@ export const getWordReportUrl = (year: number, month?: number, station_id?: numb
 export const getCsvReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
   _buildUrl('csv', year, month, station_id, county, region, quarter)
 
+export interface BreakdownRow {
+  region: string; county: string; subcounty: string
+  applications: number; ids_received: number; rejections: number; collected: number; submissions: number
+}
+
+export async function getBreakdownReport(
+  year: number, month?: number, quarter?: number,
+  region?: string, county?: string, subcounty?: string,
+): Promise<{ rows: BreakdownRow[]; year: number; month?: number }> {
+  const params: Record<string, string | number> = { year }
+  if (month)     params.month    = month
+  if (quarter)   params.quarter  = quarter
+  if (region)    params.region   = region
+  if (county)    params.county   = county
+  if (subcounty) params.subcounty = subcounty
+  const { data } = await apiClient.get('/reports/breakdown', { params })
+  return data
+}
+
 export async function getMobileSummary(
   year: number,
   month?: number,

@@ -157,6 +157,64 @@ def summary_report(
     }
 
 
+@router.get("/breakdown")
+def breakdown_report(
+    year: int = Query(...),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    quarter: Optional[int] = Query(None, ge=1, le=4),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.REGISTRAR, UserRole.DIRECTOR,
+        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP,
+    )),
+):
+    """Per-county/subcounty breakdown of key statistics — shows the user
+    exactly which area each figure comes from so 'Teso Central' is visible
+    within 'Busia County' rather than buried in a grand total."""
+    months = [month] if month else _quarter_months(quarter)
+
+    eff_region   = region   or (current_user.region   if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP) else None)
+    eff_county   = county   or (current_user.county   if current_user.role in (UserRole.CROP, UserRole.DCROP) else None)
+    eff_subcounty = subcounty or (current_user.subcounty if current_user.role == UserRole.DCROP else None)
+
+    q = db.query(
+        Submission.region, Submission.county, Submission.subcounty,
+        func.sum(Submission.app_grand_total),
+        func.sum(Submission.ids_grand_total),
+        func.sum(Submission.rej_grand_total),
+        func.sum(Submission.collected_total),
+        func.count(Submission.id),
+    ).filter(
+        Submission.period_year == year,
+        Submission.period_month.in_(months),
+        Submission.status.in_(REPORTABLE),
+    )
+    if eff_region:
+        q = q.filter(func.lower(Submission.region) == eff_region.lower())
+    if eff_county:
+        q = q.filter(func.lower(Submission.county) == eff_county.lower())
+    if eff_subcounty:
+        q = q.filter(func.lower(Submission.subcounty) == eff_subcounty.lower())
+
+    rows = q.group_by(Submission.region, Submission.county, Submission.subcounty).all()
+
+    return {
+        "year": year, "month": month, "quarter": quarter,
+        "rows": [
+            {
+                "region": r or "—", "county": c or "—", "subcounty": s or "—",
+                "applications": int(a or 0), "ids_received": int(ids or 0),
+                "rejections": int(rej or 0), "collected": int(col or 0),
+                "submissions": int(cnt),
+            }
+            for r, c, s, a, ids, rej, col, cnt in sorted(rows, key=lambda x: (x[0] or "", x[1] or "", x[2] or ""))
+        ],
+    }
+
+
 def _mobile_summary_data(
     db: Session, year: int, months: List[int], county: Optional[str] = None, subcounty: Optional[str] = None,
 ) -> dict:

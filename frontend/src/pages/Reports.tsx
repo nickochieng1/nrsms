@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl,
+  getBreakdownReport,
 } from '@/api/reports'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
@@ -36,6 +37,7 @@ export default function ReportsPage() {
   // seeing only their area; they can narrow further but backend enforces scope.
   const [region, setRegion] = useState<string>(user?.region ?? '')
   const [county, setCounty] = useState<string>(user?.county ?? '')
+  const [subcounty, setSubcounty] = useState<string>(user?.subcounty ?? '')
   const [stationId, setStationId] = useState<number | undefined>(undefined)
   const [activeTab, setActiveTab] = useState<DetailTab>('app')
   const [exportFormat, setExportFormat] = useState<'excel' | 'pdf' | 'word' | 'csv' | null>(null)
@@ -47,25 +49,34 @@ export default function ReportsPage() {
   // Derived filter options
   const regions = [...new Set((stations ?? []).map((s) => s.region))].sort()
   const counties = [...new Set((stations ?? []).filter((s) => s.region === region).map((s) => s.county))].sort()
-  const stationList = (stations ?? []).filter((s) => s.region === region && s.county === county).sort((a, b) => a.name.localeCompare(b.name))
+  // Subcounties come from station names within the selected county
+  const subcounties = [...new Set((stations ?? []).filter((s) => s.county === county).map((s) => s.name))].sort()
 
   // Pass the most specific non-empty scope to the API
-  const activeRegion  = stationId ? undefined : (county ? undefined : (region || undefined))
-  const activeCounty  = stationId ? undefined : (county || undefined)
+  const activeRegion   = stationId ? undefined : (county ? undefined : (region || undefined))
+  const activeCounty   = stationId ? undefined : (county || undefined)
+  const activeSubcounty = subcounty || undefined
 
   const { data: report, isLoading } = useQuery({
-    queryKey: ['report', 'summary', year, quarter, month, stationId, activeCounty, activeRegion],
+    queryKey: ['report', 'summary', year, quarter, month, stationId, activeCounty, activeRegion, activeSubcounty],
     queryFn: () => getSummaryReport(year, stationId, activeCounty, activeRegion, quarter, month),
+  })
+
+  const { data: breakdown } = useQuery({
+    queryKey: ['report', 'breakdown', year, month, quarter, activeRegion, activeCounty, activeSubcounty],
+    queryFn: () => getBreakdownReport(year, month, quarter, activeRegion, activeCounty, activeSubcounty),
   })
 
   function handleRegionChange(r: string) {
     setRegion(r)
     setCounty('')
+    setSubcounty('')
     setStationId(undefined)
   }
 
   function handleCountyChange(c: string) {
     setCounty(c)
+    setSubcounty('')
     setStationId(undefined)
   }
 
@@ -276,24 +287,24 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {/* Station — shown when county selected */}
+          {/* Subcounty — shown when county selected */}
           {county && (
             <div>
-              <label className="label">Station</label>
-              <select className="input w-52" value={stationId ?? ''} onChange={(e) => setStationId(e.target.value ? Number(e.target.value) : undefined)}>
-                <option value="">All Stations in {county}</option>
-                {stationList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <label className="label">Subcounty</label>
+              <select className="input w-48" value={subcounty} onChange={(e) => setSubcounty(e.target.value)}>
+                <option value="">All Subcounties</option>
+                {subcounties.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           )}
 
           {/* Clear button */}
-          {(region || stationId) && (
+          {(region || stationId || subcounty) && (
             <div className="pb-0.5">
               <button
                 type="button"
                 className="text-xs text-red-500 hover:underline mt-5"
-                onClick={() => { setRegion(''); setCounty(''); setStationId(undefined) }}
+                onClick={() => { setRegion(''); setCounty(''); setSubcounty(''); setStationId(undefined) }}
               >
                 Clear filters
               </button>
@@ -647,6 +658,51 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+
+          {/* ── Subcounty Breakdown Table ── */}
+          {breakdown && breakdown.rows.length > 0 && (
+            <div className="card mt-6 p-0 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-200 bg-gray-50">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  Breakdown by Region / County / Subcounty
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  This table shows exactly which area each figure comes from.
+                  If you submitted data for "Teso Central", look for it under its county in this table.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Region</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">County</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-600">Subcounty</th>
+                      <th className="text-right px-4 py-2 font-medium text-blue-600">Applications</th>
+                      <th className="text-right px-4 py-2 font-medium text-green-600">IDs Received</th>
+                      <th className="text-right px-4 py-2 font-medium text-red-600">Rejections</th>
+                      <th className="text-right px-4 py-2 font-medium text-emerald-600">Collected</th>
+                      <th className="text-right px-4 py-2 font-medium text-gray-500">Submissions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {breakdown.rows.map((row, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-gray-500 text-xs">{row.region}</td>
+                        <td className="px-4 py-2 text-gray-700 font-medium">{row.county}</td>
+                        <td className="px-4 py-2 text-gray-800 font-semibold">{row.subcounty}</td>
+                        <td className="px-4 py-2 text-right text-blue-700">{row.applications.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right text-green-700">{row.ids_received.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right text-red-700">{row.rejections.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right text-emerald-700">{row.collected.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right text-gray-400">{row.submissions}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
