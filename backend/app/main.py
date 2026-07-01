@@ -304,47 +304,74 @@ def _migrate_submission_hierarchy():
     from sqlalchemy import text
     if settings.DATABASE_URL.startswith("sqlite"):
         return
+    # Phase 1: ALTER TYPE statements — each needs its own commit/rollback
+    # because Postgres forbids using a newly-added enum value within the same
+    # transaction that added it.  Open and close a fresh connection for each
+    # ALTER so that catalog cache issues from prior rollbacks don't interfere
+    # with later statements.
+    for value in ("dcrop", "crop", "rrop", "hq_clerk"):
+        try:
+            with engine.connect() as c:
+                c.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{value}'"))
+                c.commit()
+        except Exception:
+            pass  # already present — safe to continue
+    for value in ("dcrop_submitted", "crop_approved", "crop_rejected",
+                  "rrop_approved", "rrop_rejected", "hq_compiled"):
+        try:
+            with engine.connect() as c:
+                c.execute(text(f"ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS '{value}'"))
+                c.commit()
+        except Exception:
+            pass  # already present — safe to continue
+
+    # Phase 2: DDL (column additions, NOT NULL drops) — wrap each in its own
+    # try/except so a second run after a partial migration doesn't fail.
     with engine.connect() as conn:
-        # New enum values — must each run in their own commit (Postgres
-        # forbids using a value added by ALTER TYPE within the same
-        # transaction that added it).
-        for value in ("dcrop", "crop", "rrop", "hq_clerk"):
-            try:
-                conn.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{value}'"))
-                conn.commit()
-            except Exception:
-                conn.rollback()
-        for value in ("dcrop_submitted", "crop_approved", "crop_rejected",
-                      "rrop_approved", "rrop_rejected", "hq_compiled"):
-            try:
-                conn.execute(text(f"ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS '{value}'"))
-                conn.commit()
-            except Exception:
-                conn.rollback()
-
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)"))
-
-        for col in (
-            "subcounty VARCHAR(200)", "county VARCHAR(200)", "region VARCHAR(200)",
-            "crop_reviewer_id INTEGER", "crop_reviewed_at TIMESTAMPTZ",
-            "rrop_reviewer_id INTEGER", "rrop_reviewed_at TIMESTAMPTZ",
-            "hq_compiled_by_id INTEGER", "hq_compiled_at TIMESTAMPTZ",
+        for stmt in (
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS county VARCHAR(200)",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS region VARCHAR(200)",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS crop_reviewer_id INTEGER",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS crop_reviewed_at TIMESTAMPTZ",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS rrop_reviewer_id INTEGER",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS rrop_reviewed_at TIMESTAMPTZ",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS hq_compiled_by_id INTEGER",
+            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS hq_compiled_at TIMESTAMPTZ",
         ):
-            conn.execute(text(f"ALTER TABLE submissions ADD COLUMN IF NOT EXISTS {col}"))
-        conn.execute(text("ALTER TABLE submissions ALTER COLUMN station_id DROP NOT NULL"))
-        conn.commit()
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        try:
+            conn.execute(text("ALTER TABLE submissions ALTER COLUMN station_id DROP NOT NULL"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
-        # Backfill geography for existing station-based submissions so older
-        # rows are filterable the same way as new DCROP submissions.
+    # Phase 3: Data migration — open a fresh connection after all DDL/ALTER
+    # TYPE work is done so the catalog cache is warm and all enum values are
+    # visible.  Cast status to TEXT for comparisons so Postgres doesn't try
+    # to validate the old literal values against the (now-extended) enum type,
+    # which can fail if the catalog cache hasn't fully refreshed in the same
+    # session that ran the ALTER TYPEs.
+    with engine.connect() as conn:
         conn.execute(text("""
             UPDATE submissions
             SET county = (SELECT county FROM stations WHERE stations.id = submissions.station_id),
                 region = (SELECT region FROM stations WHERE stations.id = submissions.station_id)
             WHERE station_id IS NOT NULL AND county IS NULL
         """))
-
-        conn.execute(text("UPDATE submissions SET status = 'dcrop_submitted' WHERE status = 'submitted'"))
-        conn.execute(text("UPDATE submissions SET status = 'draft' WHERE status = 'rejected'"))
+        conn.execute(text(
+            "UPDATE submissions SET status = 'dcrop_submitted'::submissionstatus "
+            "WHERE status::text = 'submitted'"
+        ))
+        conn.execute(text(
+            "UPDATE submissions SET status = 'draft'::submissionstatus "
+            "WHERE status::text = 'rejected'"
+        ))
         conn.commit()
 
 
