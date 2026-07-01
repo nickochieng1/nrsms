@@ -46,6 +46,7 @@ export default function App() {
 
             <Route element={<RequireAuth allowedRoles={CLERK_ONLY} />}>
               <Route path="/submissions/new" element={<NewSubmissionPage />} />
+              <Route path="/submissions/:id/edit" element={<NewSubmissionPage />} />
             </Route>
 
             <Route element={<RequireAuth allowedRoles={REPORT_ROLES} />}>

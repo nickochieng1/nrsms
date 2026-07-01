@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createSubmission } from '@/api/submissions'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createSubmission, getSubmission, updateSubmission } from '@/api/submissions'
 import { useAuth } from '@/hooks/useAuth'
 import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 import { MONTH_NAMES } from '@/utils/format'
@@ -164,10 +164,19 @@ export default function NewSubmissionPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { id: editId } = useParams<{ id?: string }>()
+  const isEditMode = !!editId
   const [apiError, setApiError] = useState<string | null>(null)
   const [savedOffline, setSavedOffline] = useState(false)
   const [activeTab, setActiveTab] = useState(0)
   const { isOnline, addToQueue } = useOfflineQueue()
+
+  // Fetch existing submission when in edit mode
+  const { data: existing } = useQuery({
+    queryKey: ['submission', editId],
+    queryFn: () => getSubmission(Number(editId)),
+    enabled: isEditMode,
+  })
 
   const { register, handleSubmit, watch, reset, formState: { isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -177,7 +186,27 @@ export default function NewSubmissionPage() {
     },
   })
 
-  const mutation = useMutation({
+  // Pre-populate form fields when existing submission loads
+  useEffect(() => {
+    if (existing) {
+      const fields: Partial<FormValues> = {
+        period_month: existing.period_month,
+        period_year: existing.period_year,
+        notes: existing.notes ?? undefined,
+      }
+      // All numeric fields
+      const numericKeys = Object.keys(schema.shape).filter(
+        k => k !== 'period_month' && k !== 'period_year' && k !== 'notes'
+      )
+      for (const key of numericKeys) {
+        const val = (existing as any)[key]
+        if (typeof val === 'number') (fields as any)[key] = val
+      }
+      reset(fields)
+    }
+  }, [existing, reset])
+
+  const createMutation = useMutation({
     mutationFn: createSubmission,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['submissions'] })
@@ -188,8 +217,22 @@ export default function NewSubmissionPage() {
     },
   })
 
+  const editMutation = useMutation({
+    mutationFn: (values: FormValues) => updateSubmission(Number(editId), values),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['submissions'] })
+      qc.invalidateQueries({ queryKey: ['submission', editId] })
+      navigate('/submissions')
+    },
+    onError: (err: any) => {
+      setApiError(err.response?.data?.detail ?? 'Failed to update submission')
+    },
+  })
+
+  const mutation = isEditMode ? editMutation : createMutation
+
   const handleFormSubmit = (values: FormValues) => {
-    if (!isOnline) {
+    if (!isOnline && !isEditMode) {
       const monthName = MONTH_NAMES[values.period_month - 1]
       addToQueue(values as unknown as Record<string, unknown>, {
         stationName: user?.subcounty ?? user?.county ?? undefined,
@@ -235,7 +278,9 @@ export default function NewSubmissionPage() {
   return (
     <div className="p-8 max-w-5xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">New Monthly Submission</h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          {isEditMode ? 'Edit Submission' : 'New Monthly Submission'}
+        </h1>
         <p className="text-gray-500 mt-1">Complete all 6 statistical modules for the reporting period</p>
       </div>
 
@@ -265,6 +310,18 @@ export default function NewSubmissionPage() {
         <div className="card mb-5">
           <h2 className="font-semibold text-gray-800 mb-4">Reporting Period &amp; Station</h2>
 
+          {isEditMode && existing && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4 text-sm">
+              <p className="font-medium text-amber-900">
+                Editing draft submission — {MONTH_NAMES[(existing.period_month ?? 1) - 1]} {existing.period_year}
+              </p>
+              <p className="text-amber-700 mt-0.5">
+                {existing.subcounty && <><span className="font-semibold">{existing.subcounty}</span> · </>}
+                {existing.county} County · {existing.region}
+              </p>
+            </div>
+          )}
+          {!isEditMode && (
           <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 text-sm">
             <p className="font-medium text-blue-900 mb-1">Submitting for your assigned area:</p>
             <p className="text-blue-700">
@@ -276,6 +333,7 @@ export default function NewSubmissionPage() {
               )}
             </p>
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-6">
             <div />
@@ -505,7 +563,11 @@ export default function NewSubmissionPage() {
           <div className="flex gap-3">
             <button type="button" onClick={() => navigate(-1)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={isSubmitting} className="btn-primary">
-              {isSubmitting ? 'Saving…' : isOnline ? 'Save as Draft' : 'Save Offline'}
+              {isSubmitting
+                ? 'Saving…'
+                : isEditMode
+                  ? 'Save Changes'
+                  : isOnline ? 'Save as Draft' : 'Save Offline'}
             </button>
           </div>
         </div>

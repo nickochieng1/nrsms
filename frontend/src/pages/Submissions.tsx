@@ -285,9 +285,14 @@ export default function SubmissionsPage() {
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-2 flex-wrap">
                         {(sub.status === 'draft' || sub.status === 'crop_rejected') && isFieldStaff && (
-                          <button onClick={() => submitMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">
-                            Submit
-                          </button>
+                          <>
+                            <Link to={`/submissions/${sub.id}/edit`} className="text-xs btn-secondary py-1 px-2">
+                              Edit
+                            </Link>
+                            <button onClick={() => submitMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">
+                              Submit
+                            </button>
+                          </>
                         )}
                         {isCROP && (sub.status === 'dcrop_submitted' || sub.status === 'rrop_rejected') && (
                           <>
