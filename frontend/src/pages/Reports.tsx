@@ -4,6 +4,7 @@ import {
   getSummaryReport, getExcelReportUrl, getPdfReportUrl, getWordReportUrl, getCsvReportUrl,
   getBreakdownReport, getLeagueTable,
 } from '@/api/reports'
+import { KenyaMap } from '@/components/reports/KenyaMap'
 import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
 import { downloadFile } from '@/utils/downloadFile'
@@ -695,6 +696,30 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+
+          {/* ── Kenya County Choropleth Map ── */}
+          {canViewLeague && league && league.rows.length > 0 && (
+            <div className="card mt-6">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">Kenya County Map</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Hover over a county to see its figures. Counties with no approved data this period are shown in grey.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Colour by:</span>
+                  {(['applications','ids_received','completeness'] as const).map(m => (
+                    <button key={m} onClick={() => setLeagueMetric(m)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${leagueMetric === m ? 'bg-primary-700 text-white border-primary-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      {m === 'applications' ? 'Applications' : m === 'ids_received' ? 'IDs Received' : 'Completeness'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <KenyaMap rows={league.rows} metric={leagueMetric} />
+            </div>
+          )}
 
           {/* ── Hierarchical Breakdown with YoY + Completeness ── */}
           {breakdown && breakdown.rows.length > 0 && (() => {
