@@ -1,7 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    audit, auth, mobile_registration_targets, mobile_registrations, reports, stations, submissions, users,
+    audit, auth, mobile_registration_targets, mobile_registrations, notifications, reports, stations,
+    submissions, users,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -14,6 +15,7 @@ api_router.include_router(mobile_registrations.router)
 api_router.include_router(mobile_registration_targets.router)
 api_router.include_router(audit.router)
 api_router.include_router(reports.router)
+api_router.include_router(notifications.router)
 
 
 @api_router.get("/health")

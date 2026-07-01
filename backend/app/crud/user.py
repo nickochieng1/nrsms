@@ -31,6 +31,7 @@ def create(db: Session, data: UserCreate) -> User:
         hashed_password=get_password_hash(data.password),
         role=data.role,
         station_id=data.station_id or None,
+        subcounty=data.subcounty or None,
         county=data.county or None,
         region=data.region or None,
     )

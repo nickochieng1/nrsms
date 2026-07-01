@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
+import { NotificationsBell } from './NotificationsBell'
 import { useOfflineQueue } from '@/hooks/useOfflineQueue'
 
 export function AppLayout() {
@@ -35,7 +36,8 @@ export function AppLayout() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-bold text-gray-900 text-sm tracking-wide">NRSMS</span>
+          <span className="font-bold text-gray-900 text-sm tracking-wide flex-1">NRSMS</span>
+          <NotificationsBell />
         </div>
 
         {/* Offline banner */}

@@ -1,4 +1,4 @@
-export type UserRole = 'clerk' | 'registrar' | 'director' | 'admin'
+export type UserRole = 'clerk' | 'registrar' | 'director' | 'admin' | 'dcrop' | 'crop' | 'rrop' | 'hq_clerk'
 
 export interface User {
   id: number
@@ -7,6 +7,7 @@ export interface User {
   email: string
   role: UserRole
   station_id: number | null
+  subcounty: string | null
   county: string | null
   region: string | null
   is_active: boolean
@@ -24,8 +25,15 @@ export interface Station {
 
 export type SubmissionStatus =
   | 'draft'
-  | 'submitted'
+  | 'dcrop_submitted'
+  | 'crop_approved'
+  | 'crop_rejected'
+  | 'rrop_approved'
+  | 'rrop_rejected'
+  | 'hq_compiled'
   | 'approved'
+  // Legacy — kept so old records still display
+  | 'submitted'
   | 'rejected'
 
 export type NrbCat = 'npr' | 'replacements' | 'changes' | 'duplicates' | 'type4' | 'type5'
@@ -70,13 +78,25 @@ export function moduleFields(prefix: ModulePrefix | 'reg136c' | 'photo3a') {
 
 export interface Submission {
   id: number
-  station_id: number
-  submitted_by: number
+  station_id: number | null
+  subcounty: string | null
+  county: string | null
+  region: string | null
+  submitted_by: number | null
   submitted_by_name: string | null
+  crop_reviewer_id: number | null
+  crop_reviewer_name: string | null
+  crop_reviewed_at: string | null
+  rrop_reviewer_id: number | null
+  rrop_reviewer_name: string | null
+  rrop_reviewed_at: string | null
+  hq_compiled_by_id: number | null
+  hq_compiled_by_name: string | null
+  hq_compiled_at: string | null
+  reviewed_by: number | null
   station_name: string | null
   station_county: string | null
   station_region: string | null
-  reviewed_by: number | null
   period_month: number
   period_year: number
   status: SubmissionStatus
@@ -138,6 +158,29 @@ export interface Submission {
   updated_at: string
   submitted_at: string | null
   approved_at: string | null
+}
+
+export interface Notification {
+  id: number
+  type: string
+  title: string
+  body: string
+  target_region: string | null
+  resource: string | null
+  resource_id: number | null
+  is_read: boolean
+  created_at: string
+}
+
+export interface RegionalStatusRow {
+  region: string
+  not_started: number
+  dcrop_submitted: number
+  crop_approved: number
+  rrop_approved: number
+  hq_compiled: number
+  approved: number
+  total: number
 }
 
 export interface AuditLog {

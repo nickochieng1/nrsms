@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
-import { getSubmissions } from '@/api/submissions'
+import { getSubmissions, getRegionalStatus } from '@/api/submissions'
 import { getSummaryReport, getTopCounties } from '@/api/reports'
 import { STATUS_COLORS, STATUS_LABELS } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, MODULE_LABELS, MODULE_COLORS } from '@/types'
@@ -45,8 +45,10 @@ const CUR_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => CUR_YEAR - i)
 
 export default function DashboardPage() {
-  const { user, canApprove, canViewReports, myPendingStatus } = useAuth()
+  const { user, canApprove, canViewReports, myPendingStatus, isRROP, isHQClerk, isRegistrar, isDirector } = useAuth()
   const [year, setYear] = useState(CUR_YEAR)
+  const [statusMonth, setStatusMonth] = useState(new Date().getMonth() + 1)
+  const showRegionalStatus = isRROP || isHQClerk || isRegistrar || isDirector
 
   const scopeRegion = user?.region ?? undefined
   const scopeLabel = scopeRegion ?? null
@@ -67,6 +69,15 @@ export default function DashboardPage() {
     queryFn: () => getTopCounties(year, undefined, undefined, 10),
     enabled: canViewReports,
   })
+
+  const { data: regionalStatus } = useQuery({
+    queryKey: ['regional-status', year, statusMonth],
+    queryFn: () => getRegionalStatus(year, statusMonth),
+    enabled: showRegionalStatus,
+    refetchInterval: 60 * 1000,
+  })
+
+  const MONTH_SHORT_LIST = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
   const pendingCount = myPendingStatus
     ? (recentSubmissions?.filter((s) => s.status === myPendingStatus).length ?? 0)
@@ -311,6 +322,75 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Regional Submission Status — visible to RROP / HQ_CLERK / Registrar / Director */}
+      {showRegionalStatus && (
+        <div className="card mt-6">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <h2 className="text-base font-semibold text-gray-900">Regional Submission Status</h2>
+            <div className="flex items-center gap-3 text-sm">
+              <select className="input py-1" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select className="input py-1" value={statusMonth} onChange={(e) => setStatusMonth(Number(e.target.value))}>
+                {MONTH_SHORT_LIST.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {!regionalStatus?.length ? (
+            <p className="text-sm text-gray-400">No submissions recorded for this period yet.</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart
+                  data={regionalStatus.map((r) => ({ name: r.region.replace(' Region', ''), ...r }))}
+                  margin={{ top: 5, right: 10, left: 0, bottom: 40 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-30} textAnchor="end" interval={0} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="dcrop_submitted"  name="Pending CROP"  fill="#93c5fd" stackId="a" />
+                  <Bar dataKey="crop_approved"    name="Pending RROP"  fill="#818cf8" stackId="a" />
+                  <Bar dataKey="rrop_approved"    name="Pending HQ"    fill="#a78bfa" stackId="a" />
+                  <Bar dataKey="hq_compiled"      name="Pending Final" fill="#fbbf24" stackId="a" />
+                  <Bar dataKey="approved"         name="Approved"      fill="#22c55e" stackId="a" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-xs text-right">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left px-2 py-1.5 font-medium text-gray-600">Region</th>
+                      <th className="px-2 py-1.5 text-blue-500">Pending CROP</th>
+                      <th className="px-2 py-1.5 text-indigo-500">Pending RROP</th>
+                      <th className="px-2 py-1.5 text-violet-500">Pending HQ</th>
+                      <th className="px-2 py-1.5 text-amber-600">Pending Final</th>
+                      <th className="px-2 py-1.5 text-green-600">Approved</th>
+                      <th className="px-2 py-1.5 text-gray-600">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {regionalStatus.map((r) => (
+                      <tr key={r.region}>
+                        <td className="text-left px-2 py-1.5 font-medium text-gray-700">{r.region}</td>
+                        <td className="px-2 py-1.5 text-blue-600">{r.dcrop_submitted || '—'}</td>
+                        <td className="px-2 py-1.5 text-indigo-600">{r.crop_approved || '—'}</td>
+                        <td className="px-2 py-1.5 text-violet-600">{r.rrop_approved || '—'}</td>
+                        <td className="px-2 py-1.5 text-amber-600">{r.hq_compiled || '—'}</td>
+                        <td className="px-2 py-1.5 text-green-600 font-medium">{r.approved || '—'}</td>
+                        <td className="px-2 py-1.5 text-gray-700 font-semibold">{r.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

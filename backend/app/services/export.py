@@ -74,11 +74,17 @@ def build_region_county_data(
         data[prefix] = {}
 
     for sub in submissions:
-        station = station_lookup.get(sub.station_id)
-        if not station:
-            continue
-        region = station.region
-        county = station.county
+        # New DCROP submissions carry region/county directly (no station_id
+        # at all); legacy station-based submissions fall back to the
+        # station lookup so old data still reports correctly.
+        region = getattr(sub, "region", None)
+        county = getattr(sub, "county", None)
+        if not region or not county:
+            station = station_lookup.get(sub.station_id)
+            if not station:
+                continue
+            region = station.region
+            county = station.county
 
         for prefix, _ in MODULES:
             data[prefix].setdefault(region, {}).setdefault(county, {

@@ -16,10 +16,10 @@ import UsersPage from '@/pages/Users'
 
 import type { UserRole } from '@/types'
 
-const CLERK_ONLY: UserRole[] = ['clerk']
-const CLERK_AND_REGISTRAR: UserRole[] = ['clerk', 'registrar']
-const MASHINANI_ROLES: UserRole[] = ['clerk', 'registrar', 'director']
-const REPORT_ROLES: UserRole[] = ['registrar', 'director']
+const CLERK_ONLY: UserRole[] = ['clerk', 'dcrop']
+const CLERK_AND_REGISTRAR: UserRole[] = ['clerk', 'dcrop', 'crop', 'rrop', 'hq_clerk', 'registrar', 'director']
+const MASHINANI_ROLES: UserRole[] = ['clerk', 'dcrop', 'registrar', 'director']
+const REPORT_ROLES: UserRole[] = ['registrar', 'director', 'rrop', 'hq_clerk']
 const ADMIN_ONLY: UserRole[] = ['admin']
 const ADMIN_AND_DIRECTOR: UserRole[] = ['admin', 'director']
 

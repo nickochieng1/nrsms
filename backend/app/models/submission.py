@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,9 +13,21 @@ if TYPE_CHECKING:
 
 
 class SubmissionStatus(str, enum.Enum):
-    DRAFT     = "draft"
-    SUBMITTED = "submitted"  # clerk submitted, awaiting registrar
-    APPROVED  = "approved"   # registrar approved — final
+    DRAFT = "draft"
+
+    # Hierarchical approval chain: DCROP -> CROP -> RROP -> HQ_CLERK -> REGISTRAR
+    DCROP_SUBMITTED = "dcrop_submitted"   # DCROP submitted, awaiting CROP review
+    CROP_APPROVED   = "crop_approved"     # CROP approved, awaiting RROP review
+    CROP_REJECTED   = "crop_rejected"     # CROP rejected — back to DCROP to fix
+    RROP_APPROVED   = "rrop_approved"     # RROP approved, awaiting HQ Clerk compilation
+    RROP_REJECTED   = "rrop_rejected"     # RROP rejected — back to CROP to re-review
+    HQ_COMPILED     = "hq_compiled"       # HQ Clerk compiled, awaiting Registrar final approval
+    APPROVED        = "approved"          # Registrar approved — final, visible to Director
+
+    # Legacy values — kept so historical rows / in-flight migrations still
+    # deserialize cleanly. _migrate_submission_hierarchy() remaps these on
+    # startup; nothing new is ever written with these statuses.
+    SUBMITTED = "submitted"
     REJECTED  = "rejected"
 
 
@@ -31,11 +43,25 @@ class Submission(Base):
     __tablename__ = "submissions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    station_id: Mapped[int] = mapped_column(Integer, ForeignKey("stations.id"))
-    # Nullable so deleting the submitter's account doesn't have to cascade —
-    # delete_user nulls this out instead of being blocked by the FK.
+    # Legacy station link — left nullable. New DCROP submissions carry their
+    # geographic scope directly (subcounty/county/region below) instead of
+    # going through a station, so this is only populated on old records.
+    station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id"), nullable=True)
+
+    # Geographic scope, snapshotted from the DCROP's profile at creation —
+    # this is what CROP/RROP/HQ_CLERK/report filters key off of.
+    subcounty: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    county: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+    # Nullable so deleting any reviewer's account doesn't have to cascade —
+    # delete_user nulls these out instead of being blocked by the FK.
     submitted_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
-    reviewed_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    crop_reviewer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    rrop_reviewer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    hq_compiled_by_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)  # Registrar — final approval
+
     period_month: Mapped[int] = mapped_column(Integer)
     period_year: Mapped[int] = mapped_column(Integer)
     status: Mapped[SubmissionStatus] = mapped_column(
@@ -52,6 +78,9 @@ class Submission(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    crop_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rrop_reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    hq_compiled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -207,15 +236,30 @@ class Submission(Base):
     photo3a_balance_cf: Mapped[int] = _int()   # computed
 
     # ── Relationships ──────────────────────────────────────────────────
-    station: Mapped["Station"] = relationship("Station", back_populates="submissions")
+    station: Mapped[Optional["Station"]] = relationship("Station", back_populates="submissions")
     submitted_by_user: Mapped[Optional["User"]] = relationship(
         "User", back_populates="submissions", foreign_keys=[submitted_by]
     )
+    crop_reviewer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[crop_reviewer_id])
+    rrop_reviewer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[rrop_reviewer_id])
+    hq_compiled_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[hq_compiled_by_id])
     reviewed_by_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewed_by])
 
     @property
     def submitted_by_name(self) -> Optional[str]:
         return self.submitted_by_user.full_name if self.submitted_by_user else None
+
+    @property
+    def crop_reviewer_name(self) -> Optional[str]:
+        return self.crop_reviewer.full_name if self.crop_reviewer else None
+
+    @property
+    def rrop_reviewer_name(self) -> Optional[str]:
+        return self.rrop_reviewer.full_name if self.rrop_reviewer else None
+
+    @property
+    def hq_compiled_by_name(self) -> Optional[str]:
+        return self.hq_compiled_by.full_name if self.hq_compiled_by else None
 
     @property
     def station_name(self) -> Optional[str]:

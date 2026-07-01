@@ -14,10 +14,16 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, enum.Enum):
-    CLERK     = "clerk"       # region-scoped data entry
-    REGISTRAR = "registrar"   # reviews clerk submissions
+    CLERK     = "clerk"       # legacy region-scoped data entry — superseded by DCROP
+    REGISTRAR = "registrar"   # HQ — final approval before Director sees the data
     DIRECTOR  = "director"    # views all data/reports, final approval
     ADMIN     = "admin"       # system administrator — user management only
+
+    # Hierarchical data-collection chain: DCROP -> CROP -> RROP -> HQ_CLERK -> REGISTRAR
+    DCROP     = "dcrop"       # Deputy County Registrar of Persons — subcounty-scoped data entry
+    CROP      = "crop"        # County Registrar of Persons — approves DCROPs in their county
+    RROP      = "rrop"        # Regional Registrar of Persons — final regional approval, deadline owner
+    HQ_CLERK  = "hq_clerk"    # Headquarters clerk — compiles one region's approved data
 
 
 class User(Base):
@@ -32,8 +38,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Geographic scope — clerks are assigned a region
+    # Geographic scope — narrows as you go down the hierarchy:
+    # DCROP needs subcounty+county+region, CROP needs county+region,
+    # RROP/HQ_CLERK need only region, REGISTRAR/DIRECTOR/ADMIN need none.
     station_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("stations.id"), nullable=True)
+    subcounty: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     county: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     region: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 

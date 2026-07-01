@@ -6,11 +6,11 @@ from app.schemas.submission import SubmissionCreate, SubmissionUpdate
 VALIDATION_RULES = [
     {
         "check": lambda d: (d.app_npr_male + d.app_npr_female) <= 5_000,
-        "message": "NPR applications exceed 5,000 for a single station/month.",
+        "message": "NPR applications exceed 5,000 for a single subcounty/month.",
     },
     {
         "check": lambda d: (d.app_replacements_male + d.app_replacements_female) <= 3_000,
-        "message": "Replacement applications exceed 3,000 for a single station/month.",
+        "message": "Replacement applications exceed 3,000 for a single subcounty/month.",
     },
     {
         "check": lambda d: d.rej_grand_total <= d.ids_grand_total if hasattr(d, "rej_grand_total") and hasattr(d, "ids_grand_total") else True,

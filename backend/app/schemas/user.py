@@ -12,6 +12,7 @@ class UserBase(BaseModel):
     username: Optional[str] = None
     role: UserRole = UserRole.CLERK
     station_id: Optional[int] = None
+    subcounty: Optional[str] = None
     county: Optional[str] = None
     region: Optional[str] = None
 
@@ -26,6 +27,7 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     role: Optional[UserRole] = None
     station_id: Optional[int] = None
+    subcounty: Optional[str] = None
     county: Optional[str] = None
     region: Optional[str] = None
     is_active: Optional[bool] = None

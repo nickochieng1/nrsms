@@ -107,7 +107,9 @@ class SubmissionBase(BaseModel):
 
 
 class SubmissionCreate(SubmissionBase):
-    station_id: int
+    # No station_id — a DCROP submits for their own assigned subcounty,
+    # snapshotted server-side from their profile, not chosen in the request.
+    station_id: Optional[int] = None
 
 
 class SubmissionUpdate(BaseModel):
@@ -183,8 +185,14 @@ class SubmissionReview(BaseModel):
 
 class SubmissionOut(SubmissionBase):
     id: int
-    station_id: int
+    station_id: Optional[int] = None
+    subcounty: Optional[str] = None
+    county: Optional[str] = None
+    region: Optional[str] = None
     submitted_by: Optional[int] = None
+    crop_reviewer_id: Optional[int] = None
+    rrop_reviewer_id: Optional[int] = None
+    hq_compiled_by_id: Optional[int] = None
     reviewed_by: Optional[int] = None
     status: SubmissionStatus
     # Computed totals — module 1
@@ -235,13 +243,30 @@ class SubmissionOut(SubmissionBase):
     photo3a_balance_cf: int
     # Meta
     submitted_by_name: Optional[str] = None
+    crop_reviewer_name: Optional[str] = None
+    rrop_reviewer_name: Optional[str] = None
+    hq_compiled_by_name: Optional[str] = None
     station_name: Optional[str] = None
     station_county: Optional[str] = None
     station_region: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     submitted_at: Optional[datetime] = None
+    crop_reviewed_at: Optional[datetime] = None
+    rrop_reviewed_at: Optional[datetime] = None
+    hq_compiled_at: Optional[datetime] = None
     approved_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class SubmissionRegionalStatusRow(BaseModel):
+    region: str
+    not_started: int = 0
+    dcrop_submitted: int = 0
+    crop_approved: int = 0
+    rrop_approved: int = 0
+    hq_compiled: int = 0
+    approved: int = 0
+    total: int = 0

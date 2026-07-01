@@ -1,15 +1,10 @@
-# NOTE: nrsms-backend was originally created directly in the Render dashboard
-# (not via this Blueprint), so Render will not auto-provision the database
-# below just from this file being in the repo. The `nrsms-db` service id is
-# declared here for documentation/future-recreation purposes; the actual
-# DATABASE_URL on the live nrsms-backend service must be set by hand once in
-# the dashboard (Settings -> Environment) to the new database's connection
-# string. See the PR/commit message for the one-time manual steps.
-databases:
-  - name: nrsms-db
-    plan: free
-    postgresMajorVersion: "16"
-
+# NOTE: nrsms-backend was created directly in the Render dashboard (not via
+# this Blueprint), so Render will not auto-provision/sync env vars from this
+# file. The live DATABASE_URL is set by hand in the dashboard (Settings ->
+# Environment) and points at a Neon Postgres database, not a Render Postgres
+# instance -- Render's free Postgres tier auto-deletes databases after 30
+# days, so Neon's always-free tier is used instead. `sync: false` below
+# means Render leaves whatever value is already set on the live service alone.
 services:
   - type: web
     name: nrsms-backend
@@ -18,9 +13,7 @@ services:
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: nrsms-db
-          property: connectionString
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: FIRST_SUPERUSER_EMAIL

@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createSubmission } from '@/api/submissions'
-import { getStations } from '@/api/stations'
 import { useAuth } from '@/hooks/useAuth'
 import { useOfflineQueue } from '@/hooks/useOfflineQueue'
-import { StationPicker } from '@/components/forms/StationPicker'
 import { MONTH_NAMES } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, CAT_COLORS, MODULE_COLORS, type ModulePrefix, type NrbCat } from '@/types'
 import clsx from 'clsx'
@@ -23,7 +21,6 @@ const mfFields = (prefix: string) =>
   }, {})
 
 const schema = z.object({
-  station_id: z.coerce.number().min(1, 'Select a station'),
   period_month: z.coerce.number().min(1).max(12),
   period_year: z.coerce.number().min(2000).max(2100),
   notes: z.string().optional(),
@@ -164,7 +161,7 @@ function RegisterTable({
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function NewSubmissionPage() {
-  const { user, isClerk } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [apiError, setApiError] = useState<string | null>(null)
@@ -172,14 +169,9 @@ export default function NewSubmissionPage() {
   const [activeTab, setActiveTab] = useState(0)
   const { isOnline, addToQueue } = useOfflineQueue()
 
-  const { data: stations } = useQuery({ queryKey: ['stations'], queryFn: getStations })
-  const regionStations = (stations ?? []).filter(
-    (s) => !user?.region || s.region.toLowerCase() === user.region.toLowerCase(),
-  )
-  const { register, handleSubmit, watch, setValue, reset, formState: { errors, isSubmitting } } = useForm<FormValues>({
+  const { register, handleSubmit, watch, reset, formState: { isSubmitting } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      station_id: 0,
       period_month: new Date().getMonth() + 1,
       period_year: new Date().getFullYear(),
     },
@@ -198,14 +190,13 @@ export default function NewSubmissionPage() {
 
   const handleFormSubmit = (values: FormValues) => {
     if (!isOnline) {
-      const station = stations?.find(s => s.id === values.station_id)
       const monthName = MONTH_NAMES[values.period_month - 1]
       addToQueue(values as unknown as Record<string, unknown>, {
-        stationName: station?.name,
+        stationName: user?.subcounty ?? user?.county ?? undefined,
         period: `${monthName} ${values.period_year}`,
       })
       setSavedOffline(true)
-      reset({ station_id: 0, period_month: new Date().getMonth() + 1, period_year: new Date().getFullYear() })
+      reset({ period_month: new Date().getMonth() + 1, period_year: new Date().getFullYear() })
       setActiveTab(0)
       return
     }
@@ -274,20 +265,20 @@ export default function NewSubmissionPage() {
         <div className="card mb-5">
           <h2 className="font-semibold text-gray-800 mb-4">Reporting Period &amp; Station</h2>
 
-          {isClerk && user?.region && (
-            <p className="text-sm text-gray-500 mb-4">
-              Assigned region: <span className="font-medium text-gray-800">{user.region}</span>
-              {' '}— select a station within your region.
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 mb-4 text-sm">
+            <p className="font-medium text-blue-900 mb-1">Submitting for your assigned area:</p>
+            <p className="text-blue-700">
+              {user?.subcounty && <><span className="font-semibold">{user.subcounty}</span> subcounty · </>}
+              {user?.county && <span>{user.county} County · </span>}
+              {user?.region && <span>{user.region}</span>}
+              {!user?.subcounty && !user?.county && !user?.region && (
+                <span className="text-red-600">No geographic area assigned — ask an admin to configure your account.</span>
+              )}
             </p>
-          )}
+          </div>
 
           <div className="grid grid-cols-2 gap-6">
-            <StationPicker
-              stations={regionStations}
-              value={watch('station_id') || undefined}
-              onChange={(id) => setValue('station_id', id ?? 0, { shouldValidate: true })}
-              error={errors.station_id?.message}
-            />
+            <div />
             <div className="space-y-3">
               <div>
                 <label className="label">Month</label>

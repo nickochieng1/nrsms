@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSubmissions, submitSubmission, reviewSubmission } from '@/api/submissions'
+import {
+  getSubmissions, submitSubmission, reviewSubmission,
+  cropReviewSubmission, rropReviewSubmission, hqCompileSubmission,
+} from '@/api/submissions'
 import { useAuth } from '@/hooks/useAuth'
 import { STATUS_COLORS, STATUS_LABELS } from '@/utils/format'
 import { NRB_CATS, CAT_LABELS, MODULE_LABELS, MODULE_COLORS } from '@/types'
@@ -11,13 +14,14 @@ const PREFIXES: ModulePrefix[] = ['app', 'ids', 'rej']
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function SubmissionsPage() {
-  const { canApprove, myPendingStatus, isClerk } = useAuth()
-  const showClerkRegion = isClerk
+  const { canApprove: _canApprove, isClerk, isDCROP, isCROP, isRROP, isHQClerk, isRegistrar } = useAuth()
+  const isFieldStaff = isClerk || isDCROP
+  const showClerkRegion = isFieldStaff
   const qc = useQueryClient()
   const [searchParams] = useSearchParams()
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | ''>((searchParams.get('status') as SubmissionStatus) || '')
   const [yearFilter, setYearFilter] = useState<number>(new Date().getFullYear())
-  const [rejectModal, setRejectModal] = useState<{ id: number } | null>(null)
+  const [rejectModal, setRejectModal] = useState<{ id: number; target: 'crop' | 'rrop' | 'final' } | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
   const [reviewModal, setReviewModal] = useState<Submission | null>(null)
@@ -49,10 +53,30 @@ export default function SubmissionsPage() {
     },
   })
 
-  const canReview = canApprove
+  const cropMutation = useMutation({
+    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
+      cropReviewSubmission(id, action, reason),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason('') },
+    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+  })
+
+  const rropMutation = useMutation({
+    mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
+      rropReviewSubmission(id, action, reason),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason('') },
+    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+  })
+
+  const hqMutation = useMutation({
+    mutationFn: (id: number) => hqCompileSubmission(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
+    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+  })
 
   function handleRowClick(sub: Submission) {
-    const canReviewNow = canApprove && myPendingStatus && sub.status === myPendingStatus
+    // Only Registrar uses the review modal — CROP/RROP/HQ_CLERK use inline
+    // action buttons on the row so each role's correct mutation is called.
+    const canReviewNow = isRegistrar && sub.status === 'hq_compiled'
     if (canReviewNow) {
       setReviewModal(sub)
     } else {
@@ -69,7 +93,7 @@ export default function SubmissionsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Submissions</h1>
           <p className="text-gray-500 mt-1">Monthly ID statistics submissions</p>
         </div>
-        {isClerk && (
+        {isFieldStaff && (
           <Link to="/submissions/new" className="btn-primary">+ New Submission</Link>
         )}
       </div>
@@ -130,16 +154,20 @@ export default function SubmissionsPage() {
                     <td className="px-4 py-3 font-medium">
                       {MONTH_SHORT[sub.period_month - 1]} {sub.period_year}
                       <span className="ml-2 text-xs text-gray-400">#{sub.id}</span>
-                      {canApprove && myPendingStatus && sub.status === myPendingStatus && (
+                      {isRegistrar && sub.status === 'hq_compiled' && (
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-600">
-                      <div className="font-medium">{sub.station_name ?? `#${sub.station_id}`}</div>
-                      {sub.station_county && <div className="text-gray-400">{sub.station_county}</div>}
+                      <div className="font-medium">
+                        {sub.subcounty ?? sub.station_name ?? (sub.station_id ? `Station #${sub.station_id}` : '—')}
+                      </div>
+                      {(sub.county ?? sub.station_county) && (
+                        <div className="text-gray-400">{sub.county ?? sub.station_county}</div>
+                      )}
                     </td>
                     {showClerkRegion && (
-                      <td className="px-4 py-3 text-xs text-gray-600">{sub.station_region ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{sub.region ?? sub.station_region ?? '—'}</td>
                     )}
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {sub.submitted_by_name ?? `User #${sub.submitted_by}`}
@@ -156,31 +184,33 @@ export default function SubmissionsPage() {
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-2 flex-wrap">
-                        {sub.status === 'draft' && (
-                          <button
-                            onClick={() => submitMutation.mutate(sub.id)}
-                            className="text-xs btn-primary py-1 px-2"
-                          >
+                        {(sub.status === 'draft' || sub.status === 'crop_rejected') && isFieldStaff && (
+                          <button onClick={() => submitMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">
                             Submit
                           </button>
                         )}
-                        {canReview && myPendingStatus && sub.status === myPendingStatus && (
+                        {isCROP && (sub.status === 'dcrop_submitted' || sub.status === 'rrop_rejected') && (
                           <>
-                            <button
-                              onClick={() => reviewMutation.mutate({ id: sub.id, action: 'approve' })}
-                              className="text-xs btn-success py-1 px-2"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => { setRejectModal({ id: sub.id }); setRejectReason('') }}
-                              className="text-xs btn-danger py-1 px-2"
-                            >
-                              Reject
-                            </button>
+                            <button onClick={() => cropMutation.mutate({ id: sub.id, action: 'approve' })} className="text-xs btn-success py-1 px-2">Approve</button>
+                            <button onClick={() => { setRejectModal({ id: sub.id, target: 'crop' }); setRejectReason('') }} className="text-xs btn-danger py-1 px-2">Reject</button>
                           </>
                         )}
-                        {sub.status === 'rejected' && sub.rejection_reason && (
+                        {isRROP && sub.status === 'crop_approved' && (
+                          <>
+                            <button onClick={() => rropMutation.mutate({ id: sub.id, action: 'approve' })} className="text-xs btn-success py-1 px-2">Approve</button>
+                            <button onClick={() => { setRejectModal({ id: sub.id, target: 'rrop' }); setRejectReason('') }} className="text-xs btn-danger py-1 px-2">Reject</button>
+                          </>
+                        )}
+                        {isHQClerk && sub.status === 'rrop_approved' && (
+                          <button onClick={() => hqMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">Compile</button>
+                        )}
+                        {isRegistrar && sub.status === 'hq_compiled' && (
+                          <>
+                            <button onClick={() => reviewMutation.mutate({ id: sub.id, action: 'approve' })} className="text-xs btn-success py-1 px-2">Approve</button>
+                            <button onClick={() => { setRejectModal({ id: sub.id, target: 'final' }); setRejectReason('') }} className="text-xs btn-danger py-1 px-2">Reject</button>
+                          </>
+                        )}
+                        {sub.rejection_reason && ['crop_rejected','rrop_rejected','draft'].includes(sub.status) && (
                           <span className="text-xs text-red-500 italic max-w-xs truncate" title={sub.rejection_reason}>
                             {sub.rejection_reason}
                           </span>
@@ -409,7 +439,7 @@ export default function SubmissionsPage() {
                   {reviewMutation.isPending ? 'Approving…' : 'Approve'}
                 </button>
                 <button
-                  onClick={() => { setRejectModal({ id: reviewModal.id }); setRejectReason(''); setReviewError(null) }}
+                  onClick={() => { setRejectModal({ id: reviewModal.id, target: 'final' }); setRejectReason(''); setReviewError(null) }}
                   className="btn-danger flex-1 py-2.5 text-base"
                 >
                   Reject
@@ -434,7 +464,11 @@ export default function SubmissionsPage() {
             />
             <div className="flex gap-3">
               <button
-                onClick={() => reviewMutation.mutate({ id: rejectModal.id, action: 'reject', reason: rejectReason })}
+                onClick={() => {
+                  if (rejectModal.target === 'crop') cropMutation.mutate({ id: rejectModal.id, action: 'reject', reason: rejectReason })
+                  else if (rejectModal.target === 'rrop') rropMutation.mutate({ id: rejectModal.id, action: 'reject', reason: rejectReason })
+                  else reviewMutation.mutate({ id: rejectModal.id, action: 'reject', reason: rejectReason })
+                }}
                 disabled={!rejectReason.trim()}
                 className="btn-danger"
               >

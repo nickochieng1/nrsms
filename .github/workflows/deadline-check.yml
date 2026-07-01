@@ -1,0 +1,17 @@
+name: Monthly RROP deadline check
+
+on:
+  schedule:
+    # 05:00 UTC on the 4th of each month = 08:00 EAT, the day after the
+    # 3rd-of-month submission deadline.
+    - cron: '0 5 4 * *'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deadline check
+        run: |
+          curl -sf -X POST https://nrsms-46e3.onrender.com/api/v1/notifications/check-deadlines \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

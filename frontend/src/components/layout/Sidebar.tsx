@@ -7,15 +7,15 @@ import nrbLogo from '@/images/nrb-kenya.svg'
 import type { UserRole } from '@/types'
 
 const NAV_ITEMS: { to: string; label: string; roles: UserRole[]; end: boolean }[] = [
-  { to: '/dashboard',             label: 'Dashboard',           roles: ['clerk', 'registrar', 'director', 'admin'], end: false },
-  { to: '/reports',               label: 'Reports',             roles: ['registrar', 'director'],                  end: false },
-  { to: '/submissions/new',       label: 'New Submission',      roles: ['clerk'],                                  end: false },
-  { to: '/submissions',           label: 'Submissions',         roles: ['clerk', 'registrar'],                     end: true  },
-  { to: '/mobile-registrations',  label: 'Usajili Mashinani',   roles: ['clerk', 'registrar', 'director'],         end: true  },
-  { to: '/mashinani-reports',     label: 'Mashinani Report',    roles: ['registrar', 'director'],                  end: false },
-  { to: '/users',                 label: 'Users',                roles: ['admin', 'director'],                     end: false },
-  { to: '/stations',              label: 'Stations',            roles: ['admin'],                                  end: false },
-  { to: '/audit',                 label: 'Audit Log',           roles: ['admin'],                                  end: false },
+  { to: '/dashboard',             label: 'Dashboard',          roles: ['clerk','registrar','director','admin','dcrop','crop','rrop','hq_clerk'], end: false },
+  { to: '/reports',               label: 'Reports',            roles: ['registrar','director','rrop','hq_clerk'],                              end: false },
+  { to: '/submissions/new',       label: 'New Submission',     roles: ['dcrop','clerk'],                                                       end: false },
+  { to: '/submissions',           label: 'Submissions',        roles: ['dcrop','clerk','crop','rrop','hq_clerk','registrar','director'],        end: true  },
+  { to: '/mobile-registrations',  label: 'Usajili Mashinani',  roles: ['clerk','dcrop','registrar','director'],                                end: true  },
+  { to: '/mashinani-reports',     label: 'Mashinani Report',   roles: ['registrar','director','rrop','hq_clerk'],                              end: false },
+  { to: '/users',                 label: 'Users',              roles: ['admin','director'],                                                    end: false },
+  { to: '/stations',              label: 'Stations',           roles: ['admin'],                                                              end: false },
+  { to: '/audit',                 label: 'Audit Log',          roles: ['admin'],                                                              end: false },
 ]
 
 interface SidebarProps {

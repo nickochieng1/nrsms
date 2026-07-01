@@ -14,8 +14,10 @@ const schema = z.object({
   username:  z.string().min(3, 'Username must be at least 3 characters').regex(/^\S+$/, 'No spaces allowed'),
   email:     z.string().email(),
   password:  z.string().min(6),
-  role:      z.enum(['clerk', 'registrar', 'director']),
+  role:      z.enum(['clerk', 'registrar', 'director', 'dcrop', 'crop', 'rrop', 'hq_clerk']),
   region:    z.string().optional(),
+  county:    z.string().optional(),
+  subcounty: z.string().optional(),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -41,14 +43,22 @@ export default function UsersPage() {
   })
 
   const role = watch('role') as UserRole
+  const selectedRegion = watch('region') ?? ''
+  const selectedCounty = watch('county') ?? ''
   const regions = [...new Set((stations ?? []).map((s) => s.region))].sort()
+  const counties = [...new Set((stations ?? []).filter((s) => s.region === selectedRegion).map((s) => s.county))].sort()
+  const subcounties = [...new Set((stations ?? []).filter((s) => s.county === selectedCounty).map((s) => s.name))].sort()
+  const needsRegion   = ['clerk','dcrop','crop','rrop','hq_clerk'].includes(role)
+  const needsCounty   = ['dcrop','crop'].includes(role)
+  const needsSubcounty = role === 'dcrop'
 
   const createMutation = useMutation({
     mutationFn: (v: FormValues) => createUser({
       ...v,
-      region: v.role === 'clerk' ? (v.region || null) : null,
+      region:    needsRegion    ? (v.region    || null) : null,
+      county:    needsCounty    ? (v.county    || null) : null,
+      subcounty: needsSubcounty ? (v.subcounty || null) : null,
       station_id: null,
-      county: null,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users'] })
@@ -143,17 +153,43 @@ export default function UsersPage() {
             <div>
               <label className="label">Role</label>
               <select className="input" {...register('role')}>
-                <option value="clerk">Clerk</option>
-                <option value="registrar">Registrar</option>
-                <option value="director">Director of Statistics</option>
+                <optgroup label="Field Staff">
+                  <option value="dcrop">DCROP (Deputy County Registrar)</option>
+                  <option value="crop">CROP (County Registrar)</option>
+                  <option value="rrop">RROP (Regional Registrar)</option>
+                  <option value="clerk">Clerk (legacy)</option>
+                </optgroup>
+                <optgroup label="Headquarters">
+                  <option value="hq_clerk">HQ Clerk</option>
+                  <option value="registrar">Registrar</option>
+                  <option value="director">Director of Statistics</option>
+                </optgroup>
               </select>
             </div>
-            {role === 'clerk' && (
+            {needsRegion && (
               <div>
-                <label className="label">Assigned Region</label>
+                <label className="label">Region</label>
                 <select className="input" {...register('region')}>
                   <option value="">Select region…</option>
                   {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            )}
+            {needsCounty && (
+              <div>
+                <label className="label">County</label>
+                <select className="input" {...register('county')} disabled={!selectedRegion}>
+                  <option value="">Select county…</option>
+                  {counties.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+            {needsSubcounty && (
+              <div>
+                <label className="label">Subcounty (station name)</label>
+                <select className="input" {...register('subcounty')} disabled={!selectedCounty}>
+                  <option value="">Select subcounty…</option>
+                  {subcounties.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             )}

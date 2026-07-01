@@ -13,6 +13,7 @@ export async function createUser(payload: {
   password: string
   role: UserRole
   station_id?: number | null
+  subcounty?: string | null
   county?: string | null
   region?: string | null
 }): Promise<User> {

@@ -3,7 +3,12 @@ import { authStore } from '@/store/authStore'
 import type { User, UserRole } from '@/types'
 
 export const PENDING_STATUS: Partial<Record<UserRole, string>> = {
-  registrar: 'submitted',
+  registrar:  'hq_compiled',
+  hq_clerk:   'rrop_approved',
+  rrop:       'crop_approved',
+  crop:       'dcrop_submitted',
+  dcrop:      'draft',
+  clerk:      'draft',       // legacy role
 }
 
 export function useAuth() {
@@ -19,22 +24,30 @@ export function useAuth() {
 
   const role = user?.role ?? null
 
-  const isAuthenticated   = !!token
-  const isAdmin           = role === 'admin'
-  const isDirector        = role === 'director'
-  const isRegistrar       = role === 'registrar'
-  const isClerk           = role === 'clerk'
-  const canApprove        = isRegistrar
-  const canViewReports    = isRegistrar || isDirector
-  const canManageUsers    = isAdmin
-  const canViewUsers      = isAdmin || isDirector
-  const myPendingStatus   = role ? PENDING_STATUS[role] : undefined
+  const isAuthenticated = !!token
+  const isAdmin         = role === 'admin'
+  const isDirector      = role === 'director'
+  const isRegistrar     = role === 'registrar'
+  const isClerk         = role === 'clerk'
+  const isDCROP         = role === 'dcrop'
+  const isCROP          = role === 'crop'
+  const isRROP          = role === 'rrop'
+  const isHQClerk       = role === 'hq_clerk'
+
+  const isFieldStaff    = isDCROP || isClerk
+  const canViewReports  = isRegistrar || isDirector || isRROP || isHQClerk
+  const canManageUsers  = isAdmin
+  const canViewUsers    = isAdmin || isDirector
+  const canApprove      = isRegistrar || isCROP || isRROP || isHQClerk
+  const myPendingStatus = role ? PENDING_STATUS[role] : undefined
 
   const logout = useCallback(() => { authStore.clearAuth() }, [])
 
   return {
     user, token, isAuthenticated,
-    isAdmin, isDirector, isRegistrar, isClerk, canApprove, canViewReports, canManageUsers, canViewUsers,
+    isAdmin, isDirector, isRegistrar, isClerk,
+    isDCROP, isCROP, isRROP, isHQClerk, isFieldStaff,
+    canApprove, canViewReports, canManageUsers, canViewUsers,
     myPendingStatus,
     logout,
   }

@@ -35,6 +35,7 @@ def on_startup():
     _migrate_schema()
     _migrate_audit_log_schema()
     _migrate_fk_nullability()
+    _migrate_submission_hierarchy()
     _seed_superuser()
     _seed_stations()
 
@@ -280,6 +281,70 @@ def _migrate_fk_nullability():
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE mobile_registrations ALTER COLUMN created_by DROP NOT NULL"))
         conn.execute(text("ALTER TABLE submissions ALTER COLUMN submitted_by DROP NOT NULL"))
+        conn.commit()
+
+
+def _migrate_submission_hierarchy():
+    """Add the DCROP -> CROP -> RROP -> HQ_CLERK -> REGISTRAR approval chain
+    on top of the existing submissions table: new geographic columns
+    (subcounty/county/region, snapshotted from the submitter so reports can
+    filter without joining stations), new per-stage reviewer/timestamp
+    columns, new User.subcounty, and the new role/status enum values on
+    Postgres's native enum types. Also remaps in-flight data so nothing
+    already submitted is stranded on a status that no longer means anything:
+    old `submitted` -> `dcrop_submitted` (same point in the chain, new name),
+    old `rejected` -> `draft` (no more single generic "rejected" status —
+    sending it back to draft makes it editable again under the new flow).
+
+    Postgres-only, same reasoning as _migrate_fk_nullability(): local SQLite
+    is disposable dev state, and create_all() already gives a fresh SQLite
+    db the right columns from the model with no NOT NULL/enum baggage to
+    work around.
+    """
+    from sqlalchemy import text
+    if settings.DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.connect() as conn:
+        # New enum values — must each run in their own commit (Postgres
+        # forbids using a value added by ALTER TYPE within the same
+        # transaction that added it).
+        for value in ("dcrop", "crop", "rrop", "hq_clerk"):
+            try:
+                conn.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{value}'"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        for value in ("dcrop_submitted", "crop_approved", "crop_rejected",
+                      "rrop_approved", "rrop_rejected", "hq_compiled"):
+            try:
+                conn.execute(text(f"ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS '{value}'"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)"))
+
+        for col in (
+            "subcounty VARCHAR(200)", "county VARCHAR(200)", "region VARCHAR(200)",
+            "crop_reviewer_id INTEGER", "crop_reviewed_at TIMESTAMPTZ",
+            "rrop_reviewer_id INTEGER", "rrop_reviewed_at TIMESTAMPTZ",
+            "hq_compiled_by_id INTEGER", "hq_compiled_at TIMESTAMPTZ",
+        ):
+            conn.execute(text(f"ALTER TABLE submissions ADD COLUMN IF NOT EXISTS {col}"))
+        conn.execute(text("ALTER TABLE submissions ALTER COLUMN station_id DROP NOT NULL"))
+        conn.commit()
+
+        # Backfill geography for existing station-based submissions so older
+        # rows are filterable the same way as new DCROP submissions.
+        conn.execute(text("""
+            UPDATE submissions
+            SET county = (SELECT county FROM stations WHERE stations.id = submissions.station_id),
+                region = (SELECT region FROM stations WHERE stations.id = submissions.station_id)
+            WHERE station_id IS NOT NULL AND county IS NULL
+        """))
+
+        conn.execute(text("UPDATE submissions SET status = 'dcrop_submitted' WHERE status = 'submitted'"))
+        conn.execute(text("UPDATE submissions SET status = 'draft' WHERE status = 'rejected'"))
         conn.commit()
 
 

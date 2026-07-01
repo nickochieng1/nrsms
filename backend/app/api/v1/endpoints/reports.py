@@ -79,6 +79,7 @@ def summary_report(
     month: Optional[int] = Query(None, ge=1, le=12),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
+    subcounty: Optional[str] = Query(None),
     county: Optional[str] = Query(None),
     region: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -91,14 +92,17 @@ def summary_report(
         Submission.period_month.in_(months),
         Submission.status.in_(REPORTABLE),
     )
+    # Direct field match — works for both legacy station-based submissions
+    # (backfilled with county/region at migration time) and new DCROP
+    # submissions (which never have a station_id at all).
     if station_id is not None:
         q = q.filter(Submission.station_id == station_id)
-    elif county:
-        station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.county) == county.lower()).all()]
-        q = q.filter(Submission.station_id.in_(station_ids))
-    elif region:
-        station_ids = [s.id for s in db.query(Station).filter(func.lower(Station.region) == region.lower()).all()]
-        q = q.filter(Submission.station_id.in_(station_ids))
+    if subcounty:
+        q = q.filter(func.lower(Submission.subcounty) == subcounty.lower())
+    if county:
+        q = q.filter(func.lower(Submission.county) == county.lower())
+    if region:
+        q = q.filter(func.lower(Submission.region) == region.lower())
 
     rows = q.all()
     monthly = {m: _zero_month() for m in months}
@@ -346,20 +350,20 @@ def top_counties_report(
     mixed into this ranking."""
     months = [month] if month else _quarter_months(quarter)
 
-    station_rows = (
-        db.query(Station.county, func.sum(Submission.app_grand_total))
-        .join(Submission, Submission.station_id == Station.id)
+    county_rows = (
+        db.query(Submission.county, func.sum(Submission.app_grand_total))
         .filter(
             Submission.period_year == year,
             Submission.period_month.in_(months),
             Submission.status.in_(REPORTABLE),
+            Submission.county.isnot(None),
         )
-        .group_by(Station.county)
+        .group_by(Submission.county)
         .all()
     )
 
     results = sorted(
-        [{"county": county, "total": int(total or 0)} for county, total in station_rows],
+        [{"county": county, "total": int(total or 0)} for county, total in county_rows],
         key=lambda r: r["total"],
         reverse=True,
     )[:limit]

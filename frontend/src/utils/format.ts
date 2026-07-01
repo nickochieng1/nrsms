@@ -4,17 +4,31 @@ export const MONTH_NAMES = [
 ]
 
 export const STATUS_LABELS: Record<string, string> = {
-  draft:               'Draft',
-  submitted:           'Awaiting Registrar Review',
-  approved:            'Approved',
-  rejected:            'Rejected',
+  draft:            'Draft',
+  // New hierarchical statuses
+  dcrop_submitted:  'Pending CROP Review',
+  crop_approved:    'Pending RROP Review',
+  crop_rejected:    'CROP Rejected',
+  rrop_approved:    'Pending HQ Compilation',
+  rrop_rejected:    'RROP Rejected',
+  hq_compiled:      'Pending Final Approval',
+  approved:         'Approved',
+  // Legacy (kept for historical records)
+  submitted:        'Pending Review',
+  rejected:         'Rejected',
 }
 
 export const STATUS_COLORS: Record<string, string> = {
-  draft:               'bg-gray-100 text-gray-700',
-  submitted:           'bg-blue-100 text-blue-700',
-  approved:            'bg-green-100 text-green-700',
-  rejected:            'bg-red-100 text-red-700',
+  draft:            'bg-gray-100 text-gray-700',
+  dcrop_submitted:  'bg-blue-100 text-blue-700',
+  crop_approved:    'bg-indigo-100 text-indigo-700',
+  crop_rejected:    'bg-red-100 text-red-700',
+  rrop_approved:    'bg-violet-100 text-violet-700',
+  rrop_rejected:    'bg-orange-100 text-orange-700',
+  hq_compiled:      'bg-amber-100 text-amber-700',
+  approved:         'bg-green-100 text-green-700',
+  submitted:        'bg-blue-100 text-blue-700',
+  rejected:         'bg-red-100 text-red-700',
 }
 
 export const ROLE_LABELS: Record<string, string> = {
@@ -22,11 +36,19 @@ export const ROLE_LABELS: Record<string, string> = {
   registrar: 'Registrar',
   director:  'Director of Statistics',
   admin:     'System Administrator',
+  dcrop:     'DCROP',
+  crop:      'CROP',
+  rrop:      'RROP',
+  hq_clerk:  'HQ Clerk',
 }
 
 export const ROLE_GROUP: Record<string, string> = {
   clerk:     'Field',
-  registrar: 'Field',
+  dcrop:     'Field',
+  crop:      'Field',
+  rrop:      'Field',
+  registrar: 'Headquarters',
+  hq_clerk:  'Headquarters',
   director:  'Headquarters',
   admin:     'System',
 }

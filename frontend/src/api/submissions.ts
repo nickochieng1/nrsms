@@ -1,10 +1,14 @@
 import { apiClient } from './client'
-import type { Submission } from '@/types'
+import type { Notification, RegionalStatusRow, Submission } from '@/types'
 
 export interface SubmissionFilters {
   station_id?: number
+  subcounty?: string
+  county?: string
+  region?: string
   status?: string
   year?: number
+  month?: number
   skip?: number
   limit?: number
 }
@@ -34,14 +38,44 @@ export async function submitSubmission(id: number): Promise<Submission> {
   return data
 }
 
-export async function reviewSubmission(
-  id: number,
-  action: 'approve' | 'reject',
-  rejection_reason?: string,
+export async function cropReviewSubmission(
+  id: number, action: 'approve' | 'reject', rejection_reason?: string,
 ): Promise<Submission> {
-  const { data } = await apiClient.post<Submission>(`/submissions/${id}/review`, {
-    action,
-    rejection_reason,
+  const { data } = await apiClient.post<Submission>(`/submissions/${id}/crop-review`, { action, rejection_reason })
+  return data
+}
+
+export async function rropReviewSubmission(
+  id: number, action: 'approve' | 'reject', rejection_reason?: string,
+): Promise<Submission> {
+  const { data } = await apiClient.post<Submission>(`/submissions/${id}/rrop-review`, { action, rejection_reason })
+  return data
+}
+
+export async function hqCompileSubmission(id: number): Promise<Submission> {
+  const { data } = await apiClient.post<Submission>(`/submissions/${id}/hq-compile`)
+  return data
+}
+
+export async function reviewSubmission(
+  id: number, action: 'approve' | 'reject', rejection_reason?: string,
+): Promise<Submission> {
+  const { data } = await apiClient.post<Submission>(`/submissions/${id}/review`, { action, rejection_reason })
+  return data
+}
+
+export async function getRegionalStatus(year: number, month: number): Promise<RegionalStatusRow[]> {
+  const { data } = await apiClient.get<RegionalStatusRow[]>('/submissions/regional-status', {
+    params: { year, month },
   })
   return data
+}
+
+export async function getNotifications(): Promise<Notification[]> {
+  const { data } = await apiClient.get<Notification[]>('/notifications')
+  return data
+}
+
+export async function markNotificationRead(id: number): Promise<void> {
+  await apiClient.post(`/notifications/${id}/read`)
 }
