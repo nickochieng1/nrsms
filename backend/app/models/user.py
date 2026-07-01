@@ -34,7 +34,7 @@ class User(Base):
     username: Mapped[Optional[str]] = mapped_column(String(100), unique=True, index=True, nullable=True)
     email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(300))
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.CLERK)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole, native_enum=False), default=UserRole.CLERK)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
 

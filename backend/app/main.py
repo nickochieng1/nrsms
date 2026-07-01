@@ -304,30 +304,26 @@ def _migrate_submission_hierarchy():
     from sqlalchemy import text
     if settings.DATABASE_URL.startswith("sqlite"):
         return
-    # Phase 1: ALTER TYPE statements — each needs its own commit/rollback
-    # because Postgres forbids using a newly-added enum value within the same
-    # transaction that added it.  Open and close a fresh connection for each
-    # ALTER so that catalog cache issues from prior rollbacks don't interfere
-    # with later statements.
-    for value in ("dcrop", "crop", "rrop", "hq_clerk"):
-        try:
-            with engine.connect() as c:
-                c.execute(text(f"ALTER TYPE userrole ADD VALUE IF NOT EXISTS '{value}'"))
-                c.commit()
-        except Exception:
-            pass  # already present — safe to continue
-    for value in ("dcrop_submitted", "crop_approved", "crop_rejected",
-                  "rrop_approved", "rrop_rejected", "hq_compiled"):
-        try:
-            with engine.connect() as c:
-                c.execute(text(f"ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS '{value}'"))
-                c.commit()
-        except Exception:
-            pass  # already present — safe to continue
 
-    # Phase 2: DDL (column additions, NOT NULL drops) — wrap each in its own
-    # try/except so a second run after a partial migration doesn't fail.
+    # Convert native Postgres enum columns to plain VARCHAR — this is the key
+    # change.  ALTER TYPE ADD VALUE proved unreliable (catalog cache issues,
+    # version-dependent transaction rules).  Switching to VARCHAR is simpler,
+    # fully idempotent (VARCHAR->VARCHAR is a no-op), and eliminates all enum
+    # type constraints so adding new status/role strings never needs a schema
+    # migration again.  Values are preserved verbatim via the USING clause.
     with engine.connect() as conn:
+        for stmt in (
+            "ALTER TABLE users ALTER COLUMN role TYPE VARCHAR(50) USING role::text",
+            "ALTER TABLE submissions ALTER COLUMN status TYPE VARCHAR(50) USING status::text",
+        ):
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                conn.rollback()  # column already VARCHAR — safe to continue
+
+        # New columns — each in its own try/except so a re-run after a
+        # partial migration doesn't abort on "column already exists".
         for stmt in (
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)",
             "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS subcounty VARCHAR(200)",
@@ -345,33 +341,23 @@ def _migrate_submission_hierarchy():
                 conn.commit()
             except Exception:
                 conn.rollback()
+
         try:
             conn.execute(text("ALTER TABLE submissions ALTER COLUMN station_id DROP NOT NULL"))
             conn.commit()
         except Exception:
             conn.rollback()
 
-    # Phase 3: Data migration — open a fresh connection after all DDL/ALTER
-    # TYPE work is done so the catalog cache is warm and all enum values are
-    # visible.  Cast status to TEXT for comparisons so Postgres doesn't try
-    # to validate the old literal values against the (now-extended) enum type,
-    # which can fail if the catalog cache hasn't fully refreshed in the same
-    # session that ran the ALTER TYPEs.
-    with engine.connect() as conn:
+        # Data migration — now that status is plain VARCHAR these are just
+        # trivial string replacements, no enum validation anywhere.
         conn.execute(text("""
             UPDATE submissions
             SET county = (SELECT county FROM stations WHERE stations.id = submissions.station_id),
                 region = (SELECT region FROM stations WHERE stations.id = submissions.station_id)
             WHERE station_id IS NOT NULL AND county IS NULL
         """))
-        conn.execute(text(
-            "UPDATE submissions SET status = 'dcrop_submitted'::submissionstatus "
-            "WHERE status::text = 'submitted'"
-        ))
-        conn.execute(text(
-            "UPDATE submissions SET status = 'draft'::submissionstatus "
-            "WHERE status::text = 'rejected'"
-        ))
+        conn.execute(text("UPDATE submissions SET status = 'dcrop_submitted' WHERE status = 'submitted'"))
+        conn.execute(text("UPDATE submissions SET status = 'draft' WHERE status = 'rejected'"))
         conn.commit()
 
 
