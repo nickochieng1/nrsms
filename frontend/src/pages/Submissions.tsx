@@ -149,9 +149,9 @@ export default function SubmissionsPage() {
   })
 
   function handleRowClick(sub: Submission) {
-    // Only Registrar uses the review modal — CROP/RROP/HQ_CLERK use inline
-    // action buttons on the row so each role's correct mutation is called.
-    const canReviewNow = isRegistrar && sub.status === 'hq_compiled'
+    // Only Registrar uses the review modal. Accepts hq_compiled (normal) and
+    // rrop_approved (auto-compile shortcut when region has no HQ Clerk).
+    const canReviewNow = isRegistrar && (sub.status === 'hq_compiled' || sub.status === 'rrop_approved')
     if (canReviewNow) {
       setReviewModal(sub)
     } else {
@@ -268,7 +268,7 @@ export default function SubmissionsPage() {
                     <td className="px-4 py-3 font-medium">
                       {MONTH_SHORT[sub.period_month - 1]} {sub.period_year}
                       <span className="ml-2 text-xs text-gray-400">#{sub.id}</span>
-                      {isRegistrar && sub.status === 'hq_compiled' && (
+                      {isRegistrar && (sub.status === 'hq_compiled' || sub.status === 'rrop_approved') && (
                         <span className="ml-2 text-xs text-amber-600 font-semibold">· click to review</span>
                       )}
                     </td>
@@ -333,7 +333,7 @@ export default function SubmissionsPage() {
                             {hqMutation.isPending ? 'Compiling…' : 'Compile'}
                           </button>
                         )}
-                        {isRegistrar && sub.status === 'hq_compiled' && (
+                        {isRegistrar && (sub.status === 'hq_compiled' || sub.status === 'rrop_approved') && (
                           <>
                             <button onClick={() => reviewMutation.mutate({ id: sub.id, action: 'approve' })} className="text-xs btn-success py-1 px-2">Approve</button>
                             <button onClick={() => { setRejectModal({ id: sub.id, target: 'final' }); setRejectReason('') }} className="text-xs btn-danger py-1 px-2">Reject</button>

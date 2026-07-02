@@ -24,7 +24,7 @@ router = APIRouter(prefix="/submissions", tags=["submissions"])
 # they already acted on.
 NON_DRAFT = [s for s in SubmissionStatus if s != SubmissionStatus.DRAFT]
 HQ_CLERK_VISIBLE = [SubmissionStatus.RROP_APPROVED, SubmissionStatus.HQ_COMPILED, SubmissionStatus.APPROVED]
-REGISTRAR_VISIBLE = [SubmissionStatus.HQ_COMPILED, SubmissionStatus.APPROVED]
+REGISTRAR_VISIBLE = [SubmissionStatus.RROP_APPROVED, SubmissionStatus.HQ_COMPILED, SubmissionStatus.APPROVED]
 DIRECTOR_VISIBLE = [SubmissionStatus.APPROVED]
 
 
@@ -400,15 +400,25 @@ def review_submission(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.REGISTRAR)),
 ):
-    """Registrar's final approval — the last gate before the Director sees it."""
+    """Registrar's final approval — the last gate before the Director sees it.
+
+    Accepts both hq_compiled (normal path) and rrop_approved (shortcut when
+    the region has no HQ Clerk assigned — the Registrar performs the compile
+    step implicitly so data is never permanently blocked).
+    """
     sub = crud_sub.get(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
-    if sub.status != SubmissionStatus.HQ_COMPILED:
+    if sub.status not in (SubmissionStatus.HQ_COMPILED, SubmissionStatus.RROP_APPROVED):
         raise HTTPException(status_code=400, detail="This submission is not awaiting registrar review")
 
     meta = get_audit_meta(request)
-    period = f"{sub.period_month}/{sub.period_year}"
+    # If skipping HQ Clerk (no HQ Clerk for this region), auto-compile first.
+    if sub.status == SubmissionStatus.RROP_APPROVED:
+        crud_sub.hq_compile(db, sub, current_user.id)
+        audit_svc.log(db, user_id=current_user.id, action="HQ_COMPILE", resource="submission",
+                      resource_id=submission_id, new_value={"auto": True}, **meta)
+
     if body.action == "approve":
         updated = crud_sub.approve(db, sub, current_user.id)
         audit_svc.log(db, user_id=current_user.id, action="APPROVE", resource="submission",
