@@ -104,10 +104,14 @@ export default function SubmissionsPage() {
 
   const submitMutation = useMutation({
     mutationFn: (id: number) => submitSubmission(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setInlineError(null) },
+    onError: (err: any) => { setInlineError(err.response?.data?.detail ?? 'Submit failed') },
   })
 
   const [reviewError, setReviewError] = useState<string | null>(null)
+  // Inline action error — shown as a dismissable banner above the table
+  // (separate from reviewError which lives inside the Registrar modal).
+  const [inlineError, setInlineError] = useState<string | null>(null)
 
   const reviewMutation = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
@@ -127,21 +131,21 @@ export default function SubmissionsPage() {
   const cropMutation = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
       cropReviewSubmission(id, action, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason('') },
-    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason(''); setInlineError(null) },
+    onError: (err: any) => { setInlineError(err.response?.data?.detail ?? 'Action failed') },
   })
 
   const rropMutation = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'approve' | 'reject'; reason?: string }) =>
       rropReviewSubmission(id, action, reason),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason('') },
-    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setRejectModal(null); setRejectReason(''); setInlineError(null) },
+    onError: (err: any) => { setInlineError(err.response?.data?.detail ?? 'Action failed') },
   })
 
   const hqMutation = useMutation({
     mutationFn: (id: number) => hqCompileSubmission(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['submissions'] }),
-    onError: (err: any) => { setReviewError(err.response?.data?.detail ?? 'Action failed') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['submissions'] }); setInlineError(null) },
+    onError: (err: any) => { setInlineError(err.response?.data?.detail ?? 'HQ Compile failed — check that this submission is RROP-approved and your region matches.') },
   })
 
   function handleRowClick(sub: Submission) {
@@ -217,6 +221,16 @@ export default function SubmissionsPage() {
         </div>
       </div>
 
+      {inlineError && (
+        <div className="mb-4 flex items-start gap-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+          <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="flex-1">{inlineError}</span>
+          <button onClick={() => setInlineError(null)} className="text-red-400 hover:text-red-600 ml-2">✕</button>
+        </div>
+      )}
+
       <div className="card p-0 overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-gray-400">Loading submissions…</div>
@@ -289,8 +303,12 @@ export default function SubmissionsPage() {
                             <Link to={`/submissions/${sub.id}/edit`} className="text-xs btn-secondary py-1 px-2">
                               Edit
                             </Link>
-                            <button onClick={() => submitMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">
-                              Submit
+                            <button
+                              onClick={() => submitMutation.mutate(sub.id)}
+                              disabled={submitMutation.isPending}
+                              className="text-xs btn-primary py-1 px-2 disabled:opacity-60"
+                            >
+                              {submitMutation.isPending ? 'Submitting…' : 'Submit'}
                             </button>
                           </>
                         )}
@@ -307,7 +325,13 @@ export default function SubmissionsPage() {
                           </>
                         )}
                         {isHQClerk && sub.status === 'rrop_approved' && (
-                          <button onClick={() => hqMutation.mutate(sub.id)} className="text-xs btn-primary py-1 px-2">Compile</button>
+                          <button
+                            onClick={() => hqMutation.mutate(sub.id)}
+                            disabled={hqMutation.isPending}
+                            className="text-xs btn-primary py-1 px-2 disabled:opacity-60"
+                          >
+                            {hqMutation.isPending ? 'Compiling…' : 'Compile'}
+                          </button>
                         )}
                         {isRegistrar && sub.status === 'hq_compiled' && (
                           <>
