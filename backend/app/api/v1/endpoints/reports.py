@@ -845,7 +845,7 @@ def mobile_excel_report(
     county: Optional[str] = Query(None),
     subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    _: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
 ):
     months = [month] if month else _quarter_months(quarter)
     data = _mobile_summary_data(db, year, months, county, subcounty)
@@ -866,7 +866,7 @@ def mobile_pdf_report(
     county: Optional[str] = Query(None),
     subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    _: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
 ):
     months = [month] if month else _quarter_months(quarter)
     data = _mobile_summary_data(db, year, months, county, subcounty)
@@ -887,7 +887,7 @@ def mobile_word_report(
     county: Optional[str] = Query(None),
     subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    _: User = Depends(require_role(UserRole.REGISTRAR, UserRole.DIRECTOR)),
 ):
     months = [month] if month else _quarter_months(quarter)
     data = _mobile_summary_data(db, year, months, county, subcounty)
