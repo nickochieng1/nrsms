@@ -26,7 +26,7 @@ export function AppLayout() {
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile top bar */}
-        <div className="lg:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+        <div className="lg:hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-lg text-gray-500 hover:bg-gray-100"
@@ -36,7 +36,7 @@ export function AppLayout() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="font-bold text-gray-900 text-sm tracking-wide flex-1">NRSMS</span>
+          <span className="font-bold text-gray-900 dark:text-gray-100 text-sm tracking-wide flex-1">NRSMS</span>
           <NotificationsBell />
         </div>
 

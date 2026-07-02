@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/auth/RequireAuth'
 import { UpdateChecker } from '@/components/UpdateChecker'
+import { DarkModeProvider } from '@/contexts/DarkModeContext'
 import LoginPage from '@/pages/Login'
 import ChangePasswordPage from '@/pages/ChangePassword'
 import DashboardPage from '@/pages/Dashboard'
@@ -25,6 +26,7 @@ const ADMIN_AND_DIRECTOR: UserRole[] = ['admin', 'director']
 
 export default function App() {
   return (
+    <DarkModeProvider>
     <BrowserRouter>
       <UpdateChecker />
       <Routes>
@@ -68,5 +70,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
+    </DarkModeProvider>
   )
 }

@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { useLang } from '@/contexts/LanguageContext'
+import { useDarkMode } from '@/contexts/DarkModeContext'
 import { ROLE_LABELS } from '@/utils/format'
 import clsx from 'clsx'
 import nrbLogo from '@/images/nrb-kenya.svg'
@@ -26,6 +27,7 @@ interface SidebarProps {
 export function Sidebar({ onClose }: SidebarProps) {
   const { user, logout } = useAuth()
   const { lang, setLang } = useLang()
+  const { isDark, toggle: toggleDark } = useDarkMode()
 
   const visibleItems = NAV_ITEMS.filter(
     (item) => user && item.roles.includes(user.role),
@@ -98,6 +100,26 @@ export function Sidebar({ onClose }: SidebarProps) {
             className={`text-xs px-2 py-1 rounded ${lang === 'sw' ? 'bg-white/20 text-white' : 'text-white/40 hover:text-white'}`}
           >
             SW
+          </button>
+          <button
+            onClick={toggleDark}
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="ml-auto p-1.5 rounded text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Toggle dark mode"
+          >
+            {isDark ? (
+              /* Sun icon */
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+              </svg>
+            ) : (
+              /* Moon icon */
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
           </button>
         </div>
         <button
