@@ -24,6 +24,7 @@ function _buildUrl(
   county?: string,
   region?: string,
   quarter?: number,
+  subcounty?: string,
 ): string {
   const params = new URLSearchParams({ year: String(year) })
   if (month)      params.set('month',      String(month))
@@ -31,20 +32,21 @@ function _buildUrl(
   if (station_id) params.set('station_id', String(station_id))
   if (county)     params.set('county',     county)
   if (region)     params.set('region',     region)
+  if (subcounty)  params.set('subcounty',  subcounty)
   return `${apiClient.defaults.baseURL}/reports/${path}?${params}`
 }
 
-export const getExcelReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
-  _buildUrl('excel', year, month, station_id, county, region, quarter)
+export const getExcelReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number, subcounty?: string) =>
+  _buildUrl('excel', year, month, station_id, county, region, quarter, subcounty)
 
-export const getPdfReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
-  _buildUrl('pdf', year, month, station_id, county, region, quarter)
+export const getPdfReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number, subcounty?: string) =>
+  _buildUrl('pdf', year, month, station_id, county, region, quarter, subcounty)
 
-export const getWordReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
-  _buildUrl('word', year, month, station_id, county, region, quarter)
+export const getWordReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number, subcounty?: string) =>
+  _buildUrl('word', year, month, station_id, county, region, quarter, subcounty)
 
-export const getCsvReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number) =>
-  _buildUrl('csv', year, month, station_id, county, region, quarter)
+export const getCsvReportUrl = (year: number, month?: number, station_id?: number, county?: string, region?: string, quarter?: number, subcounty?: string) =>
+  _buildUrl('csv', year, month, station_id, county, region, quarter, subcounty)
 
 export interface BreakdownRow {
   region: string; county: string; subcounty: string

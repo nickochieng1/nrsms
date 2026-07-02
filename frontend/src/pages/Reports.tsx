@@ -201,9 +201,10 @@ export default function ReportsPage() {
       : exportFormat === 'excel' ? getExcelReportUrl
       : exportFormat === 'pdf' ? getPdfReportUrl
       : getWordReportUrl
-    const url = urlFn(year, m, stationId, activeCounty, activeRegion, quarter)
+    const url = urlFn(year, m, stationId, activeCounty, activeRegion, quarter, activeSubcounty)
     const suffix = m ? `_${String(m).padStart(2, '0')}` : quarter ? `_Q${quarter}` : '_annual'
-    downloadFile(url, `nrb_report_${year}${suffix}.${ext}`)
+    const scope = activeRegion ? `_${activeRegion.replace(/ /g, '_')}` : ''
+    downloadFile(url, `nrb_report_${year}${suffix}${scope}.${ext}`)
     setExportFormat(null)
   }
 

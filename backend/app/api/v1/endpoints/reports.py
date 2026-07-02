@@ -669,7 +669,13 @@ def send_bulletin(
     return {"sent": len(emails) if ok else 0, "period": period, "filename": filename}
 
 
-def _query_submissions(db, year: int, month: int | None, station_id: int | None, quarter: int | None = None):
+def _query_submissions(
+    db, year: int, month: int | None, station_id: int | None,
+    quarter: int | None = None,
+    region: str | None = None,
+    county: str | None = None,
+    subcounty: str | None = None,
+):
     months = _quarter_months(quarter) if quarter else None
     q = (db.query(Submission)
          .filter(Submission.period_year == year,
@@ -680,14 +686,43 @@ def _query_submissions(db, year: int, month: int | None, station_id: int | None,
         q = q.filter(Submission.period_month.in_(months))
     if station_id:
         q = q.filter(Submission.station_id == station_id)
+    if region:
+        q = q.filter(func.lower(Submission.region) == region.lower())
+    if county:
+        q = q.filter(func.lower(Submission.county) == county.lower())
+    if subcounty:
+        q = q.filter(func.lower(Submission.subcounty) == subcounty.lower())
     return q.all()
 
 
-def _export_role_deps():
-    return require_role(
-        UserRole.REGISTRAR, UserRole.DIRECTOR,
-        UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP,
+_EXPORT_ROLES = (
+    UserRole.REGISTRAR, UserRole.DIRECTOR,
+    UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP,
+)
+
+
+def _eff_scope(
+    current_user: User,
+    region: str | None,
+    county: str | None,
+    subcounty: str | None,
+):
+    """Resolve effective region/county/subcounty for export, applying
+    role-based auto-scoping when the caller didn't supply an explicit value."""
+    eff_region = region or (
+        current_user.region
+        if current_user.role in (UserRole.RROP, UserRole.HQ_CLERK, UserRole.CROP, UserRole.DCROP)
+        else None
     )
+    eff_county = county or (
+        current_user.county
+        if current_user.role in (UserRole.CROP, UserRole.DCROP)
+        else None
+    )
+    eff_subcounty = subcounty or (
+        current_user.subcounty if current_user.role == UserRole.DCROP else None
+    )
+    return eff_region, eff_county, eff_subcounty
 
 
 @router.get("/excel")
@@ -696,14 +731,19 @@ def excel_report(
     month: Optional[int] = Query(None),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    current_user: User = Depends(require_role(*_EXPORT_ROLES)),
 ):
-    rows   = _query_submissions(db, year, month, station_id, quarter)
+    eff_region, eff_county, eff_subcounty = _eff_scope(current_user, region, county, subcounty)
+    rows   = _query_submissions(db, year, month, station_id, quarter, eff_region, eff_county, eff_subcounty)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
     suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
-    fname  = f"nrb_report_{year}{suffix}.xlsx"
+    scope  = f"_{eff_region.replace(' ', '_')}" if eff_region else ""
+    fname  = f"nrb_report_{year}{suffix}{scope}.xlsx"
     xlsx   = build_excel_report(f"NRB Statistics Report — {year}", year, month, data)
     return Response(
         content=xlsx,
@@ -718,14 +758,19 @@ def pdf_report(
     month: Optional[int] = Query(None),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    current_user: User = Depends(require_role(*_EXPORT_ROLES)),
 ):
-    rows   = _query_submissions(db, year, month, station_id, quarter)
+    eff_region, eff_county, eff_subcounty = _eff_scope(current_user, region, county, subcounty)
+    rows   = _query_submissions(db, year, month, station_id, quarter, eff_region, eff_county, eff_subcounty)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
     suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
-    fname  = f"nrb_report_{year}{suffix}.pdf"
+    scope  = f"_{eff_region.replace(' ', '_')}" if eff_region else ""
+    fname  = f"nrb_report_{year}{suffix}{scope}.pdf"
     pdf    = build_pdf_report(year, month, data)
     return Response(
         content=pdf,
@@ -740,14 +785,19 @@ def word_report(
     month: Optional[int] = Query(None),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    current_user: User = Depends(require_role(*_EXPORT_ROLES)),
 ):
-    rows   = _query_submissions(db, year, month, station_id, quarter)
+    eff_region, eff_county, eff_subcounty = _eff_scope(current_user, region, county, subcounty)
+    rows   = _query_submissions(db, year, month, station_id, quarter, eff_region, eff_county, eff_subcounty)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
     suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
-    fname  = f"nrb_report_{year}{suffix}.docx"
+    scope  = f"_{eff_region.replace(' ', '_')}" if eff_region else ""
+    fname  = f"nrb_report_{year}{suffix}{scope}.docx"
     docx_bytes = build_word_report(year, month, data)
     return Response(
         content=docx_bytes,
@@ -762,14 +812,19 @@ def csv_report(
     month: Optional[int] = Query(None),
     quarter: Optional[int] = Query(None, ge=1, le=4),
     station_id: Optional[int] = Query(None),
+    region: Optional[str] = Query(None),
+    county: Optional[str] = Query(None),
+    subcounty: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _: User = Depends(_export_role_deps()),
+    current_user: User = Depends(require_role(*_EXPORT_ROLES)),
 ):
-    rows   = _query_submissions(db, year, month, station_id, quarter)
+    eff_region, eff_county, eff_subcounty = _eff_scope(current_user, region, county, subcounty)
+    rows   = _query_submissions(db, year, month, station_id, quarter, eff_region, eff_county, eff_subcounty)
     lookup = _get_station_lookup(db)
     data   = build_region_county_data(rows, lookup, year, month)
     suffix = f"_Q{quarter}" if quarter else (f"_{month:02d}" if month else "_annual")
-    fname  = f"nrb_report_{year}{suffix}.csv"
+    scope  = f"_{eff_region.replace(' ', '_')}" if eff_region else ""
+    fname  = f"nrb_report_{year}{suffix}{scope}.csv"
     csv_bytes = build_csv_report(year, month, data)
     return Response(
         content=csv_bytes,
