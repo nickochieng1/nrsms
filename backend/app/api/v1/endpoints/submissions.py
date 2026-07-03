@@ -105,6 +105,9 @@ def create_submission(
         db, body, current_user.id,
         subcounty=current_user.subcounty, county=current_user.county, region=current_user.region,
     )
+    # Skip the manual-submit step — new submissions go straight to DCROP_SUBMITTED
+    # so CROP sees them in their queue immediately without any extra action.
+    crud_sub.submit(db, submission)
     meta = get_audit_meta(request)
     audit_svc.log(
         db, user_id=current_user.id, action="CREATE", resource="submission",
@@ -237,6 +240,7 @@ def bulk_upload(
                 db, payload, current_user.id,
                 subcounty=current_user.subcounty, county=current_user.county, region=current_user.region,
             )
+            crud_sub.submit(db, sub)
             results.append({"row": row_idx, "status": "created", "id": sub.id,
                             "detail": f"{payload.period_month}/{payload.period_year}"})
         except Exception as e:

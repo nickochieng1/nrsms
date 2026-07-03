@@ -564,10 +564,10 @@ export default function NewSubmissionPage() {
             <button type="button" onClick={() => navigate(-1)} className="btn-secondary">Cancel</button>
             <button type="submit" disabled={isSubmitting} className="btn-primary">
               {isSubmitting
-                ? 'Saving…'
+                ? 'Submitting…'
                 : isEditMode
                   ? 'Save Changes'
-                  : isOnline ? 'Save as Draft' : 'Save Offline'}
+                  : isOnline ? 'Submit' : 'Save Offline'}
             </button>
           </div>
         </div>
